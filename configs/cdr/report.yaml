@@ -1,0 +1,16 @@
+defaults:
+  - dataset.yaml
+
+# Where the engine wrote its artifacts.
+pretrain_history: outputs/cdr/pretrain/history.json
+cv_dir: outputs/cdr/cv
+finetune_dir: outputs/cdr/finetune
+benchmark_dir: outputs/cdr/benchmark
+ig_dir: outputs/cdr/ig
+
+output_dir: outputs/cdr/report
+# docs/<document>.{md,html} plus docs/<document>_assets/.
+docs_dir: docs
+document: cdr_report
+top_k: 20
+top_sites: 19

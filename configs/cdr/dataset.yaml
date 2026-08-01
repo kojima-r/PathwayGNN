@@ -1,0 +1,7 @@
+# The cancer drug-response dataset (GraphCDRScan / GDSC + CCLP). Include it with:
+#   defaults: [dataset.yaml]
+# `name` is checked against data_cdr/prepared/dataset.json, so pointing a config
+# at the wrong directory fails immediately instead of training on it.
+dataset:
+  name: cdr
+  dir: data_cdr/prepared

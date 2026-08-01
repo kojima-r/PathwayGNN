@@ -1,0 +1,6 @@
+# The TCGA cancer-survival dataset. Include this file to select it:
+#   defaults: [dataset.yaml]
+# `name` is checked against data_cancer/prepared/dataset.json.
+dataset:
+  name: cancer
+  dir: data_cancer/prepared

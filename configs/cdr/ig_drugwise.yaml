@@ -1,0 +1,21 @@
+defaults:
+  - dataset.yaml
+
+seed: 42
+device: auto
+
+dataset:
+  task: sensitive_drugwise
+
+run_dir: outputs/cdr/cv
+variant: gnn_mlp_cov
+fold: 0
+pretrained_checkpoint: outputs/cdr/pretrain/best.pt
+output_dir: outputs/cdr/ig/sensitive_drugwise_fold0
+# One integration step is one full-graph forward and backward over 356
+# relations (~0.5 s), so the budget here is samples x steps x 0.5 s.
+steps: 25
+max_samples: 40
+top_k: 1500
+# 19 primary sites would mean 19 ranking files; enable deliberately.
+per_group_rankings: false

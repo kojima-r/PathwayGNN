@@ -1,0 +1,12 @@
+# pathwaygnn-data cdr-prepare
+# `source_dir` is the upstream GraphCDRScan bundle written by
+# `python -m scripts.cdr.upstream.prepare_data` (config key FOLDER selects the
+# sub-directory); it keeps its original layout and is an input, never an output.
+source_dir: data_cdr/processed/full_features
+output_dir: data_cdr/prepared
+
+# false: the `mutation` channel carries the number of mutations of the gene in
+# the cell line. true: it carries 1.0 for every mutated gene.
+binary_mutations: false
+
+tasks: [sensitive_drugwise, sensitive_global]

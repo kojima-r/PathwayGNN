@@ -1,0 +1,33 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cancer reproduction</title><style>body{font:16px/1.55 system-ui;max-width:1180px;margin:auto;padding:2rem}table{border-collapse:collapse;display:block;overflow:auto}th,td{border:1px solid #bbb;padding:.35rem .55rem;text-align:right}th:first-child,td:first-child{text-align:left}img{max-width:100%}pre,code{background:#f4f4f4}pre{padding:1rem;overflow:auto}</style></head><body><h1>Inoue et al. cancer prognosis reproduction</h1>
+<h2>Reproduction status</h2>
+<p>Table 1 grid status: <strong>complete</strong>. The workflow covers five verification years, four model variants, five stratified folds, 150 fine-tuning epochs, and the manuscript final-epoch evaluation protocol. Completed fold artifacts are reused.</p>
+<h2>Table 1: published and reproduced ROC-AUC</h2>
+<table><thead><tr><th>year</th><th>paper_dnn</th><th>reproduced_dnn</th><th>delta_dnn</th><th>paper_dnn_cancer</th><th>reproduced_dnn_cancer</th><th>delta_dnn_cancer</th><th>paper_gnn_dnn</th><th>reproduced_gnn_dnn</th><th>delta_gnn_dnn</th><th>paper_gnn_dnn_cancer</th><th>reproduced_gnn_dnn_cancer</th><th>delta_gnn_dnn_cancer</th></tr></thead><tbody><tr><td>1</td><td>0.6312</td><td>0.6078</td><td>-0.0234</td><td>0.7425</td><td>0.7386</td><td>-0.0039</td><td>0.7382</td><td>0.7377</td><td>-0.0005</td><td>0.7585</td><td>0.7558</td><td>-0.0027</td></tr><tr><td>2</td><td>0.6168</td><td>0.6032</td><td>-0.0136</td><td>0.7672</td><td>0.7599</td><td>-0.0073</td><td>0.7678</td><td>0.7609</td><td>-0.0069</td><td>0.7596</td><td>0.7876</td><td>0.0280</td></tr><tr><td>3</td><td>0.6188</td><td>0.5970</td><td>-0.0218</td><td>0.7624</td><td>0.7543</td><td>-0.0081</td><td>0.7733</td><td>0.7696</td><td>-0.0037</td><td>0.7890</td><td>0.7837</td><td>-0.0053</td></tr><tr><td>4</td><td>0.6173</td><td>0.5976</td><td>-0.0197</td><td>0.7674</td><td>0.7507</td><td>-0.0167</td><td>0.7714</td><td>0.7670</td><td>-0.0044</td><td>0.7900</td><td>0.7837</td><td>-0.0063</td></tr><tr><td>5</td><td>0.5971</td><td>0.6076</td><td>0.0105</td><td>0.7644</td><td>0.7570</td><td>-0.0074</td><td>0.7581</td><td>0.7486</td><td>-0.0095</td><td>0.7850</td><td>0.7845</td><td>-0.0005</td></tr></tbody></table>
+<p>NA means that a full condition has not completed. Fold values are exported to outputs/cancer/report/table1_fold_auc.tsv.</p>
+<h2>Supplementary Table 1: data audit</h2>
+<table><thead><tr><th>year</th><th>total</th><th>death</th><th>survival</th></tr></thead><tbody><tr><td>1</td><td>9484</td><td>1076</td><td>8408</td></tr><tr><td>2</td><td>7308</td><td>1951</td><td>5357</td></tr><tr><td>3</td><td>5915</td><td>2425</td><td>3490</td></tr><tr><td>4</td><td>5036</td><td>2713</td><td>2323</td></tr><tr><td>5</td><td>4492</td><td>2922</td><td>1570</td></tr></tbody></table>
+<p>The prepared dataset contains 4,448 expression features, 33 cancer types, and a graph with 30,918 stored nodes, 3,673,654 directed edges and 13 relations. Cancer-level counts are in outputs/cancer/report/supplementary_table1_sample_counts.tsv.</p>
+<h2>Reproduction plots</h2>
+<figure><img src="cancer_reproduction_assets/table1_auc_by_year.png" alt="table1_auc_by_year.png"><figcaption>table1_auc_by_year.png</figcaption></figure>
+<figure><img src="cancer_reproduction_assets/table1_auc_delta.png" alt="table1_auc_delta.png"><figcaption>table1_auc_delta.png</figcaption></figure>
+<figure><img src="cancer_reproduction_assets/table1_fold_auc_boxplot.png" alt="table1_fold_auc_boxplot.png"><figcaption>table1_fold_auc_boxplot.png</figcaption></figure>
+<figure><img src="cancer_reproduction_assets/supplementary_table1_sample_counts.png" alt="supplementary_table1_sample_counts.png"><figcaption>supplementary_table1_sample_counts.png</figcaption></figure>
+<figure><img src="cancer_reproduction_assets/figure3a_per_cancer_auc.png" alt="figure3a_per_cancer_auc.png"><figcaption>figure3a_per_cancer_auc.png</figcaption></figure>
+<figure><img src="cancer_reproduction_assets/figure3b_per_cancer_auc_transition.png" alt="figure3b_per_cancer_auc_transition.png"><figcaption>figure3b_per_cancer_auc_transition.png</figcaption></figure>
+<figure><img src="cancer_reproduction_assets/figure2_pretraining_sweep.png" alt="figure2_pretraining_sweep.png"><figcaption>figure2_pretraining_sweep.png</figcaption></figure>
+<figure><img src="cancer_reproduction_assets/table1_training_curves.png" alt="table1_training_curves.png"><figcaption>table1_training_curves.png</figcaption></figure>
+<figure><img src="cancer_reproduction_assets/pretraining_diagnostics.png" alt="pretraining_diagnostics.png"><figcaption>pretraining_diagnostics.png</figcaption></figure>
+<figure><img src="cancer_reproduction_assets/figure4_degree_vs_ig.png" alt="figure4_degree_vs_ig.png"><figcaption>figure4_degree_vs_ig.png</figcaption></figure>
+<h2>Exact commands</h2>
+<pre><code>conda activate gnn
+bash scripts/cancer/reproduce_paper.sh prepare
+bash scripts/cancer/reproduce_paper.sh pretrain
+python scripts/cancer/reproduce_table1.py --gpus 0,1,2
+bash scripts/cancer/reproduce_paper.sh figure2
+bash scripts/cancer/reproduce_paper.sh ig
+bash scripts/cancer/reproduce_paper.sh report</code></pre>
+<p>Preprocessing is a separate step: `pathwaygnn-data cancer-prepare` writes the generic dataset under data_cancer/prepared, and every `pathwaygnn` command then selects it through the `dataset:` block of configs/cancer/dataset.yaml. The Table 1 runner schedules all 20 conditions over GPUs and resumes at fold level. selection: final_epoch follows the manuscript. best_test_auc is only for public-code compatibility and uses the held-out fold for selection.</p>
+<h2>Ensembl-to-HGNC conversion boundary</h2>
+<p>counts_gene.tsv contains 11,285 expression columns but no Ensembl identifier row or column. A separately supplied ordered Ensembl ID file can be mapped by `pathwaygnn-data cancer-map-ids` through MyGene.info, with version stripping, ambiguity flags, and local cache files. Without that missing list and historical MSigDB/LM22 snapshots, the supplied 4,448-gene matrices are the exact compatibility input.</p>
+<h2>Interpretation scope</h2>
+<p>The workflow generates Table 1, Supplementary Table 1, Figure 2 sweep, fold and cancer AUC tables, Figure 3 panels, training diagnostics, and Figure 4 when attribution arrays exist. Historical DAVID enrichment p-values depend on an external database release; ranked gene lists are exported, but exact historical p-values are not asserted.</p></body></html>

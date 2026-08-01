@@ -1,0 +1,21 @@
+defaults:
+  - dataset.yaml
+
+seed: 42
+device: auto
+
+dataset:
+  task: kd_inh
+
+run_dir: outputs/tr/cv
+variant: gnn_mlp
+fold: 0
+pretrained_checkpoint: outputs/tr/pretrain/best.pt
+output_dir: outputs/tr/ig/kd_inh_fold0
+steps: 50
+# Set null for every held-out sample; graph IG costs one full-graph forward and
+# backward per integration step, so start small.
+max_samples: 50
+top_k: 1500
+# 235 diseases would mean 235 ranking files; enable deliberately.
+per_group_rankings: false

@@ -1,0 +1,22 @@
+defaults:
+  - dataset.yaml
+
+seed: 100
+device: auto
+
+model:
+  hidden_dim: 32
+  # Public reference code uses 2; the manuscript describes 3 GIN layers.
+  num_layers: 2
+  dropout: 0.0
+
+training:
+  epochs: 50
+  checkpoint_epochs: [0, 10, 20, 30, 40, 50]
+  steps_per_epoch: 1
+  batch_size: 100
+  balanced_relations: true
+  learning_rate: 0.0001
+  weight_decay: 0.0005
+
+output_dir: outputs/cancer/pretrain_sweep

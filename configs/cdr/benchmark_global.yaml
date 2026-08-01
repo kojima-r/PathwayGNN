@@ -1,0 +1,7 @@
+defaults:
+  - benchmark_drugwise.yaml
+
+dataset:
+  task: sensitive_global
+
+output_dir: outputs/cdr/benchmark/sensitive_global

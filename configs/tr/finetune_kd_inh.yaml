@@ -1,0 +1,31 @@
+defaults:
+  - dataset.yaml
+
+seed: 42
+device: auto
+
+dataset:
+  task: kd_inh
+
+split: [0.7, 0.15, 0.15]
+pretrained_checkpoint: outputs/tr/pretrain/best.pt
+
+variant:
+  use_graph: true
+  use_covariates: false
+
+model:
+  hidden_dim: 64
+  dropout: 0.2
+  block: plain
+
+training:
+  epochs: 100
+  batch_size: 64
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  num_workers: 0
+  patience: 20
+  train_encoder: false
+
+output_dir: outputs/tr/finetune/kd_inh

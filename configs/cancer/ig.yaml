@@ -1,0 +1,21 @@
+defaults:
+  - dataset.yaml
+
+seed: 100
+device: auto
+
+dataset:
+  task: 5year
+
+run_dir: outputs/cancer/table1
+variant: gnn_dnn_cancer
+fold: 0
+pretrained_checkpoint: outputs/cancer/pretrain_50/best.pt
+output_dir: outputs/cancer/ig/5year_fold0
+steps: 50
+# Set null for all held-out samples; start small because graph IG is expensive.
+max_samples: null
+top_k: 1500
+per_group_rankings: true
+reference:
+  degree_ig_pearson_r: 0.727

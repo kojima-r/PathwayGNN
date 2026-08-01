@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pathwaygnn"
+version = "0.1.0"
+description = "Distributed pathway-graph pre-training and sample-level prediction"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+  "numpy>=2.0",
+  "PyYAML>=6.0",
+  "torch>=2.6",
+  "torch-geometric>=2.6",
+]
+
+[project.optional-dependencies]
+benchmark = ["scikit-learn>=1.6", "xgboost>=3.0"]
+paper = ["scikit-learn>=1.6", "matplotlib>=3.10", "mygene>=3.2"]
+# Only for scripts/cdr/upstream/, which rebuilds data_cdr/processed/ from the
+# raw GDSC/CCLP/Reactome files. `pathwaygnn-data cdr-prepare` and everything
+# downstream of it read the bundle with numpy alone and need none of this.
+# The downloader also shells out to `pdftotext` (Poppler) and LibreOffice.
+cdr-upstream = [
+  "pandas>=2.2",
+  "scikit-learn>=1.6",
+  "tqdm>=4.66",
+  "rdkit>=2024.3",
+  "twobitreader>=3.1",
+  "signatureanalyzer>=0.0.7",
+]
+dev = ["pytest>=8.3", "ruff>=0.11"]
+
+[project.scripts]
+pathwaygnn = "pathwaygnn.cli:main"
+pathwaygnn-data = "pathwaygnn_datasets.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pathwaygnn*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+

@@ -1,0 +1,7 @@
+defaults:
+  - benchmark_kd_inh.yaml
+
+dataset:
+  task: oe_act
+
+output_dir: outputs/tr/benchmark/oe_act

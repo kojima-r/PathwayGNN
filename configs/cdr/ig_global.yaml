@@ -1,0 +1,7 @@
+defaults:
+  - ig_drugwise.yaml
+
+dataset:
+  task: sensitive_global
+
+output_dir: outputs/cdr/ig/sensitive_global_fold0

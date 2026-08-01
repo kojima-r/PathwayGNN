@@ -1,0 +1,19 @@
+defaults:
+  - dataset.yaml
+
+seed: 42
+device: auto
+
+dataset:
+  task: sensitive_drugwise
+
+folds: 5
+n_jobs: 24
+logistic_regression: {C: 1.0}
+# 107k samples x 16,954 features with ~1,550 non-zeros per row: an unbounded
+# forest does not finish in reasonable time on this matrix, so both the tree
+# count and the depth are capped. This is a reference point for the GNN, not a
+# tuned baseline.
+random_forest: {n_estimators: 60, max_depth: 12}
+xgboost: {enabled: true, n_estimators: 200, max_depth: 6, learning_rate: 0.1, subsample: 0.8}
+output_dir: outputs/cdr/benchmark/sensitive_drugwise

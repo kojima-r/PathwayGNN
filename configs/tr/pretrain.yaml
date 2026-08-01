@@ -1,0 +1,19 @@
+defaults:
+  - dataset.yaml
+
+seed: 42
+device: auto
+
+model:
+  hidden_dim: 64
+  num_layers: 2
+  dropout: 0.1
+
+training:
+  epochs: 100
+  steps_per_epoch: 1
+  batch_size: 8192
+  learning_rate: 0.001
+  weight_decay: 0.0001
+
+output_dir: outputs/tr/pretrain

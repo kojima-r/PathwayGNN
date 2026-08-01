@@ -1,0 +1,7 @@
+# pathwaygnn-data cancer-prepare
+# `source_dir/processed` holds the upstream bundle; `output_dir` is the prepared
+# dataset that every pathwaygnn command reads.
+source_dir: data_cancer
+output_dir: data_cancer/prepared
+years: [1, 2, 3, 4, 5]
+num_genes: 4448

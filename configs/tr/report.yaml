@@ -1,0 +1,16 @@
+defaults:
+  - dataset.yaml
+
+# Where the engine wrote its artifacts.
+pretrain_history: outputs/tr/pretrain/history.json
+cv_dir: outputs/tr/cv
+finetune_dir: outputs/tr/finetune
+benchmark_dir: outputs/tr/benchmark
+ig_dir: outputs/tr/ig
+
+output_dir: outputs/tr/report
+# docs/<document>.{md,html} plus docs/<document>_assets/.
+docs_dir: docs
+document: tr_report
+top_k: 20
+top_diseases: 15

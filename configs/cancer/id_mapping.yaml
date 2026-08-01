@@ -1,0 +1,6 @@
+# counts_gene.tsv does not contain these IDs. Supply the matching ordered list.
+input_path: data_cancer/rawdata_TCGA/ensembl_gene_ids.txt
+output_path: data_cancer/prepared/ensembl_to_hgnc.tsv
+cache_path: data_cancer/prepared/mygene_response_cache.json
+species: human
+batch_size: 1000

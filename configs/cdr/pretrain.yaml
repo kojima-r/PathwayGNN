@@ -1,0 +1,22 @@
+defaults:
+  - dataset.yaml
+
+seed: 42
+device: auto
+
+model:
+  hidden_dim: 64
+  num_layers: 2
+  dropout: 0.1
+
+# The Reactome graph carries 356 relation types, so one full-graph forward runs
+# 356 GINConv blocks per layer (~0.5 s forward+backward on one RTX PRO 6000).
+# Keep `steps_per_epoch` small; the cost is per step, not per sample.
+training:
+  epochs: 100
+  steps_per_epoch: 5
+  batch_size: 8192
+  learning_rate: 0.001
+  weight_decay: 0.0001
+
+output_dir: outputs/cdr/pretrain

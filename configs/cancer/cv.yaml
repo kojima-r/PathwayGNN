@@ -1,0 +1,44 @@
+defaults:
+  - dataset.yaml
+
+seed: 100
+device: auto
+folds: 5
+
+dataset:
+  tasks: [1year, 2year, 3year, 4year, 5year]
+
+pretrained_checkpoint: outputs/cancer/pretrain_50/best.pt
+
+model:
+  embedding_dim: 32      # used by the graph-free variants; graph variants take
+  hidden_dim: 32         # the encoder's hidden size instead
+  batch_norm: true
+  dropout: 0.0
+  block: paper
+
+training:
+  epochs: 150
+  batch_size: 1024
+  learning_rate: 0.00005
+  weight_decay: 0.0
+  num_workers: 0
+  shuffle: false
+  end_to_end: true
+  loss_clip: 0.01
+  loss_reduction: sum
+  scheduler_patience: 10
+  grad_clip_value: 10.0
+  # Manuscript protocol. Use best_test_auc only for public-code compatibility.
+  selection: final_epoch
+  resume: true
+
+# `seed_index` pins each variant's seed offset, so running one condition on its
+# own reproduces the seed it gets inside the full grid.
+variants:
+  - {name: dnn, use_graph: false, use_covariates: false, seed_index: 0}
+  - {name: dnn_cancer, use_graph: false, use_covariates: true, seed_index: 1}
+  - {name: gnn_dnn, use_graph: true, use_covariates: false, seed_index: 2}
+  - {name: gnn_dnn_cancer, use_graph: true, use_covariates: true, seed_index: 3}
+
+output_dir: outputs/cancer/table1

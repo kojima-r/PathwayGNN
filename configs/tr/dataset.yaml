@@ -1,0 +1,7 @@
+# The target-repositioning dataset. Include this file to select it:
+#   defaults: [dataset.yaml]
+# `name` is checked against data_tr/prepared/dataset.json, so pointing a config
+# at the wrong directory fails immediately instead of training on it.
+dataset:
+  name: tr
+  dir: data_tr/prepared

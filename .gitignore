@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.idea/
+.vscode/
+
+# Prepared datasets are regenerable from raw data plus the preprocessing code.
+data_tr/prepared/
+data_cancer/prepared/
+data_cdr/prepared/
+# Pre-refactor layout, superseded by data_cancer/prepared/.
+data_cancer/artifacts/
+# The drug-response corpus: 2.4 GB of raw inputs (hg38.2bit, the CCLP export)
+# and a 9.3 GB upstream bundle, both regenerable via scripts/cdr/upstream/, and
+# some raw inputs carry separate licences (COSMIC requires registration).
+data_cdr/raw/
+data_cdr/processed/
+outputs/
+*.pt
+*.pth
+*.ckpt
+events.out.tfevents.*
+
+# Source raw data is versioned so preprocessing is reproducible.

@@ -1,0 +1,7 @@
+defaults:
+  - ig_kd_inh.yaml
+
+dataset:
+  task: oe_act
+
+output_dir: outputs/tr/ig/oe_act_fold0

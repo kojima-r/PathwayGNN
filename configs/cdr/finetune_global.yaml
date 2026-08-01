@@ -1,0 +1,7 @@
+defaults:
+  - finetune_drugwise.yaml
+
+dataset:
+  task: sensitive_global
+
+output_dir: outputs/cdr/finetune/sensitive_global

@@ -1,0 +1,11 @@
+defaults:
+  - dataset.yaml
+
+run_dir: outputs/cancer/table1
+output_dir: outputs/cancer/report
+# The reproduction document and its figures. `docs/` also holds the source PDFs
+# under docs/papers/, which are not generated.
+docs_dir: docs
+pretrain_history: outputs/cancer/pretrain_50/history.json
+ig_dir: outputs/cancer/ig
+sweep_dir: outputs/cancer/pretraining_sweep

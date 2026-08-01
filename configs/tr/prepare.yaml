@@ -1,0 +1,4 @@
+# pathwaygnn-data tr-prepare
+raw_dir: data_tr/raw
+output_dir: data_tr/prepared
+cutoff: 1.0e-7

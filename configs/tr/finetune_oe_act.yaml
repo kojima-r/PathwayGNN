@@ -1,0 +1,7 @@
+defaults:
+  - finetune_kd_inh.yaml
+
+dataset:
+  task: oe_act
+
+output_dir: outputs/tr/finetune/oe_act
