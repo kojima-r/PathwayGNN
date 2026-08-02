@@ -32,6 +32,8 @@ PathwayGNN は次の4実装を、現行 PyTorch / PyTorch Geometric API で再�
 
 ```bash
 pathwaygnn-data tr-prepare     --config configs/tr/prepare.yaml       # data_tr/raw       -> data_tr/prepared
+pathwaygnn-data cancer-build-processed --config configs/cancer/build_processed.yaml
+                                                                      # rawdata_TCGA/     -> data_cancer/processed
 pathwaygnn-data cancer-prepare --config configs/cancer/prepare.yaml   # data_cancer/...   -> data_cancer/prepared
 pathwaygnn-data cdr-prepare    --config configs/cdr/prepare.yaml      # data_cdr/processed -> data_cdr/prepared
 pathwaygnn pretrain --config configs/tr/pretrain.yaml                 # 以降は汎用形式のみを読む
@@ -190,6 +192,11 @@ training:
 
 `cv` はデータセット非依存です。`variants × tasks × folds` のグリッドを実行し、fold単位で再開でき、
 グループ別AUCも出力します。がん論文の Table 1 と同じ仕組みで target repositioning も評価できます。
+
+評価値は **ROC-AUC と、閾値 0.5 での accuracy / precision / recall / F1** を、エポック単位
+（`history` の `test_*`）、fold 単位（`metrics.json`）、条件単位（`summary.json` の
+`mean_*` / `std_*` / `fold_*`）で保存します。モデル選択は ROC-AUC のみで行います。
+詳細は [README_config.md](README_config.md#保存される評価値) を参照してください。
 
 ```bash
 pathwaygnn cv --config configs/tr/cv.yaml        # kd_inh と oe_act、グラフ有無の2 variant

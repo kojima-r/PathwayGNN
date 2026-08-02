@@ -496,6 +496,7 @@ def run_cdr_report(cfg: dict[str, Any]) -> dict[str, Any]:
                 name, variant, bool(summary["variant"].get("use_graph")),
                 bool(summary["variant"].get("use_covariates")),
                 summary["mean_auc"], summary["std_auc"],
+                *[summary.get(f"mean_{metric}", math.nan) for metric in METRICS[1:]],
                 min(summary["fold_auc"]), max(summary["fold_auc"]),
                 _auc(entry[0], entry[1]) if entry else math.nan,
                 len(summary["fold_auc"]),
@@ -503,6 +504,7 @@ def run_cdr_report(cfg: dict[str, Any]) -> dict[str, Any]:
             fold_rows.append([name, variant, *summary["fold_auc"],
                               summary["mean_auc"], summary["std_auc"]])
     cv_header = ["task", "variant", "uses_graph", "uses_covariates", "mean_auc", "std_auc",
+                 *[f"mean_{metric}" for metric in METRICS[1:]],
                  "min_fold_auc", "max_fold_auc", "pooled_auc", "folds"]
     tsv(output / "cv_summary.tsv", cv_header, cv_rows)
     tsv(output / "cv_fold_auc.tsv",
@@ -578,8 +580,10 @@ def run_cdr_report(cfg: dict[str, Any]) -> dict[str, Any]:
         for model, item in benchmark[name].items():
             benchmark_rows.append([name, model, *[item["mean"][metric] for metric in METRICS]])
         for variant, summary in conditions[name].items():
-            benchmark_rows.append([name, f"{variant} (pathwaygnn cv)", summary["mean_auc"],
-                                   *[math.nan] * (len(METRICS) - 1)])
+            benchmark_rows.append([
+                name, f"{variant} (pathwaygnn cv)",
+                *[summary.get(f"mean_{metric}", math.nan) for metric in METRICS],
+            ])
     tsv(output / "benchmark_comparison.tsv", ["task", "model", *METRICS], benchmark_rows)
 
     # --- attributions -------------------------------------------------------
@@ -636,6 +640,21 @@ def run_cdr_report(cfg: dict[str, Any]) -> dict[str, Any]:
 
     # --- document -----------------------------------------------------------
     covered = [f"{task}/{variant}" for task in tasks for variant in conditions.get(task, {})]
+    collapsed = [
+        f"{task}/{variant}"
+        for task in tasks
+        for variant, summary in conditions.get(task, {}).items()
+        if summary.get("mean_f1") == 0
+    ]
+    threshold_note = (
+        "`cv` trains with an unweighted BCE loss — unlike `finetune`, which applies `pos_weight` — "
+        "so on imbalanced labels the 0.5 operating point collapses onto the majority class. That "
+        f"happens for {len(collapsed)} of {len(covered)} conditions ({', '.join(collapsed)})."
+        if collapsed else
+        "`cv` trains with an unweighted BCE loss — unlike `finetune`, which applies `pos_weight` — "
+        "so on imbalanced labels the 0.5 operating point would drift towards the majority class. "
+        "Both tasks here are ~50% positive by construction, so accuracy and F1 stay interpretable."
+    )
     status = (
         f"{len(covered)} cross-validation conditions, {len(finetune)} holdout runs, "
         f"{len(benchmark)} baseline runs, {len(attributions)} attribution runs"
@@ -725,7 +744,11 @@ primary sites that actually appear, out of `sites_total` in the one-hot block.
 {mdtable(cv_header, cv_rows)}
 
 `pooled_auc` is computed once over the concatenated held-out predictions of all folds, which is why
-it can sit outside the min/max of the per-fold values.
+it can sit outside the min/max of the per-fold values. The `mean_accuracy`/`precision`/`recall`/`f1`
+columns score the same folds at a fixed **0.5 decision threshold**; ROC-AUC is threshold-free, so a
+condition can rank well and still sit at a poor operating point (or the reverse).
+
+{threshold_note}
 
 The grid is a two-factor ablation — the pathway graph on/off crossed with the covariate branch
 on/off — so each switch can be read with the other held fixed:
@@ -743,9 +766,9 @@ the graph has little left to add.
 {mdtable(["task", "model", *METRICS], benchmark_rows)}
 
 The baselines consume exactly the same features as the GNN — the mutation channel expanded to
-`[samples, {dataset.num_nodes:,}]` plus the covariate block — without the pathway graph. Only
-ROC-AUC is comparable to the cross-validation rows; the threshold metrics are omitted there because
-`cv` records ROC-AUC only. These are reference points, not tuned models: the features are unscaled
+`[samples, {dataset.num_nodes:,}]` plus the covariate block — without the pathway graph. All five
+metrics are on the same footing: both sides are the mean over the same five folds, and both
+threshold at 0.5. These are reference points, not tuned models: the features are unscaled
 counts and raw bits, so `LogisticRegression` hits its `max_iter=1000` lbfgs limit without
 converging, and the forest is capped at 60 trees of depth 12 to finish on a
 107,418 x {dataset.num_nodes + (dataset.task(tasks[0]).covariate_dim if tasks else 0):,} matrix.

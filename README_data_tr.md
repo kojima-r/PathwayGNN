@@ -10,6 +10,21 @@
 
 ---
 
+## 0. 最初に読む: リポジトリをクローンした直後の状態
+
+**3つのデータセットのうち、生データがリポジトリに同梱されているのは `data_tr` だけです**
+（合計 150 MB、`SHA256SUMS` つき）。したがってクローン直後にそのまま実行できます。
+外部からのダウンロードも、ライセンス手続きも、追加の依存関係も必要ありません。
+
+```bash
+conda activate gnn
+pip install -e .
+bash scripts/tr/prepare.sh                              # data_tr/raw -> data_tr/prepared
+pathwaygnn pretrain --config configs/tr/pretrain.yaml   # 以降は §4 参照
+```
+
+---
+
 ## 1. ディレクトリ構成
 
 ```text

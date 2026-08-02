@@ -5,6 +5,11 @@ Runs one grid of ``variants x tasks x folds``, resumes at fold level and writes
 plus a per-condition ``summary.json``. Nothing here is dataset-specific: the
 group breakdown, the covariate branch and the channel list all come from the
 task manifest.
+
+Every evaluation records ROC-AUC *and* accuracy/precision/recall/F1 at a 0.5
+decision threshold, per epoch in ``history``, per fold in ``metrics.json`` and as
+``mean_``/``std_``/``fold_`` entries in ``summary.json``. Model selection still
+uses ROC-AUC alone.
 """
 
 from __future__ import annotations
@@ -28,10 +33,16 @@ from pathwaygnn.data.format import GraphDataset, Task, open_dataset
 from pathwaygnn.data.samples import TaskDataset
 from pathwaygnn.models.encoder import RelationalGIN, load_encoder
 from pathwaygnn.models.predictor import SampleLevelModel, build_model
+from pathwaygnn.training.metrics import METRICS, threshold_metrics
 
 
 def auc_score(target: np.ndarray, probability: np.ndarray) -> float:
     return float(roc_auc_score(target, probability)) if np.unique(target).size == 2 else math.nan
+
+
+def fold_metrics(target: np.ndarray, probability: np.ndarray) -> dict[str, float]:
+    """ROC-AUC plus the 0.5-threshold metrics for one set of held-out predictions."""
+    return {"auc": auc_score(target, probability), **threshold_metrics(target, probability)}
 
 
 def standardizer(
@@ -61,7 +72,7 @@ def _evaluate(
     mean: Tensor | None,
     std: Tensor | None,
     frozen_embeddings: Tensor | None,
-) -> tuple[float, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[dict[str, float], np.ndarray, np.ndarray, np.ndarray]:
     predictor.eval()
     if encoder is not None:
         encoder.eval()
@@ -77,7 +88,7 @@ def _evaluate(
             targets.append(batch.label.cpu().numpy())
             indices.append(batch.index.numpy())
     probability, target, index = map(np.concatenate, (probabilities, targets, indices))
-    return auc_score(target, probability), target, probability, index
+    return fold_metrics(target, probability), target, probability, index
 
 
 def _one_fold(
@@ -102,7 +113,21 @@ def _one_fold(
         and model_path.exists()
     ):
         result = json.loads(metrics_path.read_text())
-        print(json.dumps({"stage": "cv", "status": "reused", "task": task.name,
+        status = "reused"
+        if any(key not in result for key in METRICS):
+            # Written before the threshold metrics were recorded. They are a
+            # function of the stored held-out predictions, so recover them here
+            # instead of forcing a retrain.
+            history = result.pop("history", [])
+            arrays = np.load(predictions_path)
+            result = {
+                **result,
+                **threshold_metrics(arrays["target"], arrays["probability"]),
+                "history": history,
+            }
+            metrics_path.write_text(json.dumps(result, indent=2, allow_nan=True))
+            status = "reused (threshold metrics backfilled)"
+        print(json.dumps({"stage": "cv", "status": status, "task": task.name,
                           "variant": variant["name"], "fold": fold, "auc": result["auc"]}))
         return result
     fold_seed = int(cfg.get("seed", 42)) + task.seed_offset * 1000 + fold
@@ -203,14 +228,15 @@ def _one_fold(
             optimizer.step()
             total_loss += float(loss.detach())
             total_samples += batch.size
-        test_auc, target, probability, sample_index = _evaluate(
+        metrics, target, probability, sample_index = _evaluate(
             predictor, encoder, test_loader, graph, device, mean, std, frozen_embeddings
         )
+        test_auc = metrics["auc"]
         scheduler.step(test_auc)
         history.append({
             "epoch": epoch,
             "train_loss_per_sample": total_loss / total_samples,
-            "test_auc": test_auc,
+            **{f"test_{key}": value for key, value in metrics.items()},
         })
         print(json.dumps({"task": task.name, "variant": variant["name"], "fold": fold,
                           **history[-1]}))
@@ -220,6 +246,7 @@ def _one_fold(
                 "predictor": deepcopy(predictor.state_dict()),
                 "encoder": deepcopy(encoder.state_dict()) if encoder is not None else None,
                 "epoch": epoch,
+                "metrics": metrics,
                 "target": target,
                 "probability": probability,
                 "sample_index": sample_index,
@@ -252,6 +279,7 @@ def _one_fold(
         "variant": variant["name"],
         "fold": fold,
         "auc": best_auc,
+        **{key: value for key, value in best_state["metrics"].items() if key != "auc"},
         "selected_epoch": best_state["epoch"],
         "duration_seconds": time.time() - started,
         "seed": fold_seed,
@@ -303,15 +331,16 @@ def run_cv(cfg: dict[str, Any]) -> dict[str, Any]:
                 _one_fold(cfg, dataset, task, variant, variant_index, fold, train, test, output_dir)
                 for fold, (train, test) in enumerate(splits)
             ]
-            aucs = [item["auc"] for item in fold_results]
             summary = {
                 "dataset": dataset.name,
                 "task": task_name,
                 "variant": variant,
-                "mean_auc": float(np.nanmean(aucs)),
-                "std_auc": float(np.nanstd(aucs)),
-                "fold_auc": aucs,
             }
+            for metric in METRICS:
+                values = [float(item.get(metric, math.nan)) for item in fold_results]
+                summary[f"mean_{metric}"] = float(np.nanmean(values))
+                summary[f"std_{metric}"] = float(np.nanstd(values))
+                summary[f"fold_{metric}"] = values
             output_dir.mkdir(parents=True, exist_ok=True)
             (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, allow_nan=True))
             results[key] = summary

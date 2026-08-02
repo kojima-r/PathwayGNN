@@ -48,19 +48,23 @@ primary sites that actually appear, out of `sites_total` in the one-hot block.
 
 ## Cross-validation (`pathwaygnn cv`)
 
-| task | variant | uses_graph | uses_covariates | mean_auc | std_auc | min_fold_auc | max_fold_auc | pooled_auc | folds |
-|---|---|---|---|---|---|---|---|---|---|
-| sensitive_drugwise | mlp | False | False | 0.5160 | 0.0137 | 0.4950 | 0.5308 | 0.5169 | 5 |
-| sensitive_drugwise | mlp_cov | False | True | 0.7183 | 0.0022 | 0.7159 | 0.7220 | 0.7181 | 5 |
-| sensitive_drugwise | gnn_mlp | True | False | 0.5509 | 0.0511 | 0.4866 | 0.6195 | 0.5578 | 5 |
-| sensitive_drugwise | gnn_mlp_cov | True | True | 0.7226 | 0.0064 | 0.7148 | 0.7336 | 0.7222 | 5 |
-| sensitive_global | mlp | False | False | 0.5017 | 0.0057 | 0.4909 | 0.5064 | 0.4998 | 5 |
-| sensitive_global | mlp_cov | False | True | 0.9243 | 0.0007 | 0.9235 | 0.9253 | 0.9241 | 5 |
-| sensitive_global | gnn_mlp | True | False | 0.5070 | 0.0065 | 0.4952 | 0.5142 | 0.5076 | 5 |
-| sensitive_global | gnn_mlp_cov | True | True | 0.9244 | 0.0015 | 0.9221 | 0.9264 | 0.9243 | 5 |
+| task | variant | uses_graph | uses_covariates | mean_auc | std_auc | mean_accuracy | mean_precision | mean_recall | mean_f1 | min_fold_auc | max_fold_auc | pooled_auc | folds |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| sensitive_drugwise | mlp | False | False | 0.5160 | 0.0137 | 0.5113 | 0.4306 | 0.2989 | 0.3028 | 0.4950 | 0.5308 | 0.5169 | 5 |
+| sensitive_drugwise | mlp_cov | False | True | 0.7183 | 0.0022 | 0.6558 | 0.6929 | 0.5587 | 0.6185 | 0.7159 | 0.7220 | 0.7181 | 5 |
+| sensitive_drugwise | gnn_mlp | True | False | 0.5509 | 0.0511 | 0.5330 | 0.5668 | 0.5782 | 0.5030 | 0.4866 | 0.6195 | 0.5578 | 5 |
+| sensitive_drugwise | gnn_mlp_cov | True | True | 0.7226 | 0.0064 | 0.6578 | 0.6881 | 0.5784 | 0.6277 | 0.7148 | 0.7336 | 0.7222 | 5 |
+| sensitive_global | mlp | False | False | 0.5017 | 0.0057 | 0.4992 | 0.3014 | 0.3091 | 0.2605 | 0.4909 | 0.5064 | 0.4998 | 5 |
+| sensitive_global | mlp_cov | False | True | 0.9243 | 0.0007 | 0.8394 | 0.8398 | 0.8388 | 0.8393 | 0.9235 | 0.9253 | 0.9241 | 5 |
+| sensitive_global | gnn_mlp | True | False | 0.5070 | 0.0065 | 0.5023 | 0.4276 | 0.2569 | 0.2312 | 0.4952 | 0.5142 | 0.5076 | 5 |
+| sensitive_global | gnn_mlp_cov | True | True | 0.9244 | 0.0015 | 0.8400 | 0.8439 | 0.8345 | 0.8391 | 0.9221 | 0.9264 | 0.9243 | 5 |
 
 `pooled_auc` is computed once over the concatenated held-out predictions of all folds, which is why
-it can sit outside the min/max of the per-fold values.
+it can sit outside the min/max of the per-fold values. The `mean_accuracy`/`precision`/`recall`/`f1`
+columns score the same folds at a fixed **0.5 decision threshold**; ROC-AUC is threshold-free, so a
+condition can rank well and still sit at a poor operating point (or the reverse).
+
+`cv` trains with an unweighted BCE loss — unlike `finetune`, which applies `pos_weight` — so on imbalanced labels the 0.5 operating point would drift towards the majority class. Both tasks here are ~50% positive by construction, so accuracy and F1 stay interpretable.
 
 The grid is a two-factor ablation — the pathway graph on/off crossed with the covariate branch
 on/off — so each switch can be read with the other held fixed:
@@ -89,22 +93,22 @@ the graph has little left to add.
 | sensitive_drugwise | logistic_regression | 0.7090 | 0.6561 | 0.6626 | 0.6352 | 0.6485 |
 | sensitive_drugwise | random_forest | 0.7355 | 0.6770 | 0.6929 | 0.6350 | 0.6626 |
 | sensitive_drugwise | xgboost | 0.7582 | 0.6880 | 0.6998 | 0.6575 | 0.6780 |
-| sensitive_drugwise | mlp (pathwaygnn cv) | 0.5160 | NA | NA | NA | NA |
-| sensitive_drugwise | mlp_cov (pathwaygnn cv) | 0.7183 | NA | NA | NA | NA |
-| sensitive_drugwise | gnn_mlp (pathwaygnn cv) | 0.5509 | NA | NA | NA | NA |
-| sensitive_drugwise | gnn_mlp_cov (pathwaygnn cv) | 0.7226 | NA | NA | NA | NA |
+| sensitive_drugwise | mlp (pathwaygnn cv) | 0.5160 | 0.5113 | 0.4306 | 0.2989 | 0.3028 |
+| sensitive_drugwise | mlp_cov (pathwaygnn cv) | 0.7183 | 0.6558 | 0.6929 | 0.5587 | 0.6185 |
+| sensitive_drugwise | gnn_mlp (pathwaygnn cv) | 0.5509 | 0.5330 | 0.5668 | 0.5782 | 0.5030 |
+| sensitive_drugwise | gnn_mlp_cov (pathwaygnn cv) | 0.7226 | 0.6578 | 0.6881 | 0.5784 | 0.6277 |
 | sensitive_global | logistic_regression | 0.9216 | 0.8384 | 0.8391 | 0.8374 | 0.8382 |
 | sensitive_global | random_forest | 0.9061 | 0.8204 | 0.8233 | 0.8161 | 0.8196 |
 | sensitive_global | xgboost | 0.9330 | 0.8510 | 0.8535 | 0.8476 | 0.8505 |
-| sensitive_global | mlp (pathwaygnn cv) | 0.5017 | NA | NA | NA | NA |
-| sensitive_global | mlp_cov (pathwaygnn cv) | 0.9243 | NA | NA | NA | NA |
-| sensitive_global | gnn_mlp (pathwaygnn cv) | 0.5070 | NA | NA | NA | NA |
-| sensitive_global | gnn_mlp_cov (pathwaygnn cv) | 0.9244 | NA | NA | NA | NA |
+| sensitive_global | mlp (pathwaygnn cv) | 0.5017 | 0.4992 | 0.3014 | 0.3091 | 0.2605 |
+| sensitive_global | mlp_cov (pathwaygnn cv) | 0.9243 | 0.8394 | 0.8398 | 0.8388 | 0.8393 |
+| sensitive_global | gnn_mlp (pathwaygnn cv) | 0.5070 | 0.5023 | 0.4276 | 0.2569 | 0.2312 |
+| sensitive_global | gnn_mlp_cov (pathwaygnn cv) | 0.9244 | 0.8400 | 0.8439 | 0.8345 | 0.8391 |
 
 The baselines consume exactly the same features as the GNN — the mutation channel expanded to
-`[samples, 13,606]` plus the covariate block — without the pathway graph. Only
-ROC-AUC is comparable to the cross-validation rows; the threshold metrics are omitted there because
-`cv` records ROC-AUC only. These are reference points, not tuned models: the features are unscaled
+`[samples, 13,606]` plus the covariate block — without the pathway graph. All five
+metrics are on the same footing: both sides are the mean over the same five folds, and both
+threshold at 0.5. These are reference points, not tuned models: the features are unscaled
 counts and raw bits, so `LogisticRegression` hits its `max_iter=1000` lbfgs limit without
 converging, and the forest is capped at 60 trees of depth 12 to finish on a
 107,418 x 16,954 matrix.

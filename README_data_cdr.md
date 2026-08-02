@@ -10,6 +10,38 @@ PathwayGNN 内で完結します。
 
 ---
 
+## 0. 最初に読む: リポジトリをクローンした直後の状態
+
+**`data_cdr/` はリポジトリに含まれていません**（`.gitignore` 対象）。容量が 12 GB あり、
+一部の入力（COSMIC Cancer Gene Census）が登録済みユーザーの手動ダウンロードを
+要求するためです。したがって新規クローンでは、下の①から順に実行して作る必要があります。
+
+```bash
+conda activate gnn
+pip install -e '.[cdr-upstream]'         # ①② 専用の依存関係（pandas / rdkit など）
+# さらに pdftotext (Poppler) と LibreOffice が PATH に必要
+
+# ① 公開データの取得と互換変換 -> data_cdr/raw
+python -m scripts.cdr.upstream.download_raw_data
+#   COSMIC CGC だけは手動ダウンロードが必要（§3 参照）
+python -m scripts.cdr.upstream.download_raw_data --no-download \
+  --cosmic-cgc ./Cosmic_CancerGeneCensus_Tsv_v104_GRCh38.tar
+
+# ② 特徴量生成 -> data_cdr/processed/full_features
+python -m scripts.cdr.upstream.prepare_data --config configs/cdr/upstream.json
+
+# ③ 汎用形式へ変換 -> data_cdr/prepared
+bash scripts/cdr/prepare.sh
+
+# ④ 学習・評価・レポート
+bash scripts/cdr/reproduce.sh
+```
+
+所要時間の目安: ①は回線次第（1.7 GB のダウンロード、hg38.2bit が支配的）、
+②は変異シグネチャの算出が重く数時間、③は約4分、④は3 GPU で約1時間。
+
+---
+
 ## 1. ディレクトリ構成
 
 ```text
@@ -57,9 +89,10 @@ COSMIC Cancer Gene Census が登録済みユーザーの手動ダウンロード
 | ② 特徴量生成 | `python -m scripts.cdr.upstream.prepare_data --config configs/cdr/upstream.json` | 同上 |
 | ③ 汎用形式へ変換 | `bash scripts/cdr/prepare.sh` | **numpy のみ** |
 
-**①②は既に完了済みなので通常は不要です。** これらの依存関係（pandas / rdkit /
-twobitreader / signatureanalyzer）は `gnn` 環境には入っていません。③以降は numpy だけで
-動くよう意図的に書かれており、パイプライン本体が上流の依存関係を持ち込むことはありません。
+①②の依存関係（pandas / rdkit / twobitreader / signatureanalyzer）は `gnn` 環境には
+入っていないので、`pip install -e '.[cdr-upstream]'` で別途入れてください。
+**③以降は numpy だけで動くよう意図的に書かれており**、一度 `data_cdr/processed/` を
+作ってしまえば（あるいは他所から持ち込めば）上流の依存関係は不要です。
 
 `scripts/cdr/upstream/` は GraphCDRScan の `scripts/` ツリーの写しです。
 **変更点はデータ根のみ**（`data/` → `data_cdr/`、`prepare_data.py` の `--data-root`）で、
@@ -315,7 +348,10 @@ GDSC のサンプルは *(細胞株, 化合物)* の組なので、同じ細胞�
 
 ---
 
-## 7. 実行
+## 7. 学習の実行
+
+`data_cdr/processed/full_features` まで揃っていれば（§0 の①②、あるいは既存のバンドル）、
+ここから先は numpy と `gnn` 環境だけで完結します。
 
 ```bash
 conda activate gnn

@@ -7,6 +7,7 @@ before training starts and leave a dataset in the generic
 without any dataset knowledge of its own.
 
     pathwaygnn-data tr-prepare      --config configs/tr/prepare.yaml
+    pathwaygnn-data cancer-build-processed --config configs/cancer/build_processed.yaml
     pathwaygnn-data cancer-prepare  --config configs/cancer/prepare.yaml
     pathwaygnn-data cancer-map-ids  --config configs/cancer/id_mapping.yaml
     pathwaygnn-data cdr-prepare     --config configs/cdr/prepare.yaml
@@ -26,6 +27,7 @@ from pathwaygnn.config import load_config
 HELP = {
     "tr-prepare": "PathwayCommons + perturbation/disease signatures -> dataset `tr`",
     "cancer-prepare": "TCGA survival bundle -> dataset `cancer`",
+    "cancer-build-processed": "raw TCGA + PathwayCommons -> the upstream bundle data_cancer/processed",
     "cancer-map-ids": "map an ordered Ensembl ID list to HGNC IDs via MyGene.info",
     "cdr-prepare": "GraphCDRScan GDSC/CCLP bundle -> dataset `cdr`",
     "cancer-report": "render the Inoue et al. comparison tables, figures and document",
@@ -41,6 +43,10 @@ def _run(command: str, cfg: dict[str, Any]) -> Any:
         return prepare_tr_dataset(
             cfg["raw_dir"], cfg["output_dir"], float(cfg.get("cutoff", 1e-7))
         )
+    if command == "cancer-build-processed":
+        from pathwaygnn_datasets.cancer.build import build_cancer_processed
+
+        return build_cancer_processed(cfg)
     if command == "cancer-prepare":
         from pathwaygnn_datasets.cancer.prepare import prepare_cancer_dataset
 
@@ -49,6 +55,7 @@ def _run(command: str, cfg: dict[str, Any]) -> Any:
             cfg["output_dir"],
             cfg.get("years", [1, 2, 3, 4, 5]),
             int(cfg.get("num_genes", 4448)),
+            bool(cfg.get("strict_sample_counts", True)),
         )
     if command == "cancer-map-ids":
         from pathwaygnn_datasets.cancer.gene_mapping import map_ensembl_ids

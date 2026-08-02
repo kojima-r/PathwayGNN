@@ -207,6 +207,21 @@ def run_cancer_report(cfg: dict[str, Any]) -> dict[str, Any]:
     tsv(output / "table1_fold_auc.tsv",
          ["year", "variant", "fold_0", "fold_1", "fold_2", "fold_3", "fold_4", "mean", "std"], fold_rows)
     (output / "table1_comparison.md").write_text("# Table 1 reproduction\n\n" + mdtable(header, rows) + "\n")
+    # Table 1 is ROC-AUC because that is what the manuscript reports; the same
+    # folds scored at a 0.5 decision threshold go into their own table.
+    threshold_header = ["year", "variant", "mean_auc", "mean_accuracy", "mean_precision",
+                        "mean_recall", "mean_f1"]
+    threshold_rows = []
+    for y in YEARS:
+        for v in variants:
+            item = reproduced.get(f"{y}year/{v}")
+            if item:
+                threshold_rows.append([
+                    y, v, item["mean_auc"],
+                    *[item.get(f"mean_{m}", math.nan)
+                      for m in ("accuracy", "precision", "recall", "f1")],
+                ])
+    tsv(output / "table1_threshold_metrics.tsv", threshold_header, threshold_rows)
     counts = {}; count_rows = []
     group_codes = {}
     for y in YEARS:
@@ -266,6 +281,16 @@ manuscript final-epoch evaluation protocol. Completed fold artifacts are reused.
 
 NA means that a full condition has not completed. Fold values are exported to
 outputs/cancer/report/table1_fold_auc.tsv.
+
+## Threshold metrics at 0.5
+
+{mdtable(threshold_header, threshold_rows)}
+
+Table 1 compares ROC-AUC because that is the metric the manuscript reports. These are the same
+folds and the same held-out predictions scored at a fixed 0.5 decision threshold, so they describe
+the operating point rather than the ranking. The labels are imbalanced and shift with the
+verification year (88.6% survival at 1 year, 34.9% at 5), so accuracy is not comparable across
+years; also exported to outputs/cancer/report/table1_threshold_metrics.tsv.
 
 ## Supplementary Table 1: data audit
 

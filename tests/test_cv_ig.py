@@ -11,6 +11,7 @@ import torch
 from pathwaygnn.data.format import GraphDataset
 from pathwaygnn.training.cv import run_cv
 from pathwaygnn.training.ig import run_ig
+from pathwaygnn.training.metrics import METRICS, threshold_metrics
 
 VARIANTS = [
     {"name": "mlp", "use_graph": False, "use_covariates": False, "seed_index": 0},
@@ -40,9 +41,12 @@ def test_cv_grid_and_ig(tmp_path: Path, dataset: GraphDataset, pretrained: Path)
     results = run_cv(_cv_config(dataset, pretrained, output))
     assert sorted(results) == ["main/gnn_cov", "main/mlp"]
     for key, summary in results.items():
-        assert len(summary["fold_auc"]) == 2
         assert summary["task"] == "main" and summary["dataset"] == dataset.name
-        assert np.isfinite(summary["mean_auc"])
+        # ROC-AUC and the 0.5-threshold metrics are summarised the same way.
+        for metric in METRICS:
+            assert len(summary[f"fold_{metric}"]) == 2
+            assert np.isfinite(summary[f"mean_{metric}"])
+            assert np.isfinite(summary[f"std_{metric}"])
     assert json.loads((output / "cv_results.json").read_text()).keys() == results.keys()
 
     fold = output / "main" / "gnn_cov" / "fold_0"
@@ -53,6 +57,15 @@ def test_cv_grid_and_ig(tmp_path: Path, dataset: GraphDataset, pretrained: Path)
     assert set(metrics["per_group_auc"]) == {"g0", "g1", "g2"}
     predictions = np.load(fold / "predictions.npz")
     assert predictions["target"].size == predictions["probability"].size == 12
+
+    # The fold, its selected epoch and the condition summary agree, and every
+    # threshold metric is exactly what the stored predictions imply.
+    expected = threshold_metrics(predictions["target"], predictions["probability"])
+    for metric in METRICS[1:]:
+        assert metrics[metric] == expected[metric]
+        assert metrics["history"][metrics["selected_epoch"] - 1][f"test_{metric}"] == metrics[metric]
+        assert results["main/gnn_cov"][f"fold_{metric}"][0] == metrics[metric]
+    assert metrics["history"][metrics["selected_epoch"] - 1]["test_auc"] == metrics["auc"]
     checkpoint = torch.load(fold / "model.pt", map_location="cpu", weights_only=False)
     assert checkpoint["model_config"]["channels"] == ["expression", "signature"]
     assert checkpoint["covariate_mean"].shape == (3,)
@@ -136,3 +149,33 @@ def test_cv_resumes_completed_folds(tmp_path: Path, dataset: GraphDataset, pretr
     config["training"]["resume"] = False
     run_cv(config)
     assert any(path.stat().st_mtime_ns != stamps[path] for path in stamps)
+
+
+def test_cv_backfills_threshold_metrics_of_older_runs(
+    tmp_path: Path, dataset: GraphDataset, pretrained: Path
+) -> None:
+    """A fold written before the threshold metrics existed is upgraded in place.
+
+    They are a function of the stored held-out predictions, so resuming must
+    recover them rather than silently reporting ROC-AUC alone.
+    """
+    output = tmp_path / "cv"
+    config = _cv_config(dataset, pretrained, output)
+    first = run_cv(config)
+    fold_path = output / "main" / "mlp" / "fold_0" / "metrics.json"
+    original = json.loads(fold_path.read_text())
+
+    # Rewrite the fold the way the pre-threshold-metric version of `cv` did.
+    fold_path.write_text(json.dumps(
+        {key: value for key, value in original.items() if key not in METRICS[1:]}, indent=2
+    ))
+    second = run_cv(config)
+
+    restored = json.loads(fold_path.read_text())
+    for metric in METRICS[1:]:
+        assert restored[metric] == original[metric]
+        assert second["main/mlp"][f"mean_{metric}"] == first["main/mlp"][f"mean_{metric}"]
+    # Backfilling must not disturb anything else about the cached fold.
+    assert restored["auc"] == original["auc"]
+    assert restored["history"] == original["history"]
+    assert restored["seed"] == original["seed"]

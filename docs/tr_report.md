@@ -25,15 +25,19 @@ non-zero genes per row of each channel after the 1e-7 cutoff.
 
 ## Cross-validation (`pathwaygnn cv`)
 
-| task | variant | uses_graph | mean_auc | std_auc | min_fold_auc | max_fold_auc | pooled_auc | folds |
-|---|---|---|---|---|---|---|---|---|
-| kd_inh | mlp | False | 0.5000 | 0.0334 | 0.4353 | 0.5295 | 0.5127 | 5 |
-| kd_inh | gnn_mlp | True | 0.5059 | 0.0305 | 0.4708 | 0.5469 | 0.5116 | 5 |
-| oe_act | mlp | False | 0.7045 | 0.1090 | 0.5577 | 0.8689 | 0.6886 | 5 |
-| oe_act | gnn_mlp | True | 0.6986 | 0.1421 | 0.4733 | 0.8659 | 0.6756 | 5 |
+| task | variant | uses_graph | mean_auc | std_auc | mean_accuracy | mean_precision | mean_recall | mean_f1 | min_fold_auc | max_fold_auc | pooled_auc | folds |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| kd_inh | mlp | False | 0.5000 | 0.0334 | 0.9183 | 0.0000 | 0.0000 | 0.0000 | 0.4353 | 0.5295 | 0.5127 | 5 |
+| kd_inh | gnn_mlp | True | 0.5059 | 0.0305 | 0.9183 | 0.0000 | 0.0000 | 0.0000 | 0.4708 | 0.5469 | 0.5116 | 5 |
+| oe_act | mlp | False | 0.7045 | 0.1090 | 0.9178 | 0.0000 | 0.0000 | 0.0000 | 0.5577 | 0.8689 | 0.6886 | 5 |
+| oe_act | gnn_mlp | True | 0.6986 | 0.1421 | 0.9133 | 0.0667 | 0.0571 | 0.0615 | 0.4733 | 0.8659 | 0.6756 | 5 |
 
 `pooled_auc` is computed once over the concatenated held-out predictions of all folds, which is why
-it can sit outside the min/max of the per-fold values.
+it can sit outside the min/max of the per-fold values. The `mean_accuracy`/`precision`/`recall`/`f1`
+columns score the same folds at a fixed **0.5 decision threshold**; ROC-AUC is threshold-free, so a
+condition can rank well and still sit at a poor operating point (or the reverse).
+
+`cv` trains with an unweighted BCE loss — unlike `finetune`, which applies `pos_weight` — so on imbalanced labels the 0.5 operating point collapses onto the majority class. That is what happens here: 3 of 4 conditions (kd_inh/mlp, kd_inh/gnn_mlp, oe_act/mlp) score F1 exactly 0 at 0.5 while their ROC-AUC is not at chance. The ranking carries signal; the default threshold does not expose it.
 
 Effect of the graph encoder:
 
@@ -49,17 +53,17 @@ Effect of the graph encoder:
 | kd_inh | logistic_regression | 0.6545 | 0.7127 | 0.1626 | 0.6050 | 0.2562 |
 | kd_inh | random_forest | 0.7520 | 0.9042 | 0.2851 | 0.1111 | 0.1590 |
 | kd_inh | xgboost | 0.7402 | 0.9165 | 0.4339 | 0.0529 | 0.0934 |
-| kd_inh | mlp (pathwaygnn cv) | 0.5000 | NA | NA | NA | NA |
-| kd_inh | gnn_mlp (pathwaygnn cv) | 0.5059 | NA | NA | NA | NA |
+| kd_inh | mlp (pathwaygnn cv) | 0.5000 | 0.9183 | 0.0000 | 0.0000 | 0.0000 |
+| kd_inh | gnn_mlp (pathwaygnn cv) | 0.5059 | 0.9183 | 0.0000 | 0.0000 | 0.0000 |
 | oe_act | logistic_regression | 0.4541 | 0.7400 | 0.0474 | 0.1036 | 0.0648 |
 | oe_act | random_forest | 0.6868 | 0.8733 | 0.2733 | 0.3321 | 0.2849 |
 | oe_act | xgboost | 0.4663 | 0.8956 | 0.0000 | 0.0000 | 0.0000 |
-| oe_act | mlp (pathwaygnn cv) | 0.7045 | NA | NA | NA | NA |
-| oe_act | gnn_mlp (pathwaygnn cv) | 0.6986 | NA | NA | NA | NA |
+| oe_act | mlp (pathwaygnn cv) | 0.7045 | 0.9178 | 0.0000 | 0.0000 | 0.0000 |
+| oe_act | gnn_mlp (pathwaygnn cv) | 0.6986 | 0.9133 | 0.0667 | 0.0571 | 0.0615 |
 
 The baselines consume exactly the same features as the GNN — the sparse perturbation and disease
-signatures — without the pathway graph. Only ROC-AUC is comparable to the cross-validation rows;
-the threshold metrics are omitted there because `cv` records ROC-AUC only.
+signatures — without the pathway graph. All five metrics are on the same footing: both sides are
+the mean over the same five folds, and both threshold at 0.5.
 
 ## Holdout fine-tuning (`pathwaygnn finetune`)
 

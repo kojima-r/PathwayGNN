@@ -1,0 +1,46 @@
+# pathwaygnn-data cancer-build-processed
+#
+# Builds the upstream bundle `data_cancer/processed/` that `cancer-prepare` reads.
+# Run this only when rebuilding the corpus from raw TCGA data; if
+# `data_cancer/processed/` is already present, go straight to `cancer-prepare`.
+#
+# Two inputs are NOT in this repository and cannot be shipped:
+#   * `gene_ids`  — the ordered identifiers of the 58,037 rows of counts_gene.tsv.
+#     recount2 ships the row order with its gene annotation but the matrix itself
+#     carries no row names. Write one identifier per line, in row order; an
+#     optional second column holding bp_length enables `transform: log1p_tpm`.
+#   * `gene_sets` — the cancer-related gene universe. Inoue et al. use MSigDB and
+#     the LM22 immune signature, both of which require a registered download.
+#     `.gmt` files and plain one-column symbol lists are both accepted.
+# Both are validated on load, so a missing or mismatched file fails immediately.
+
+graph_sif: data_tr/raw/PathwayCommons12.All.hgnc.sif
+# Any HGNC complete-set export works; this one ships with the drug-response
+# corpus and carries both "Approved symbol" and "Ensembl gene ID".
+hgnc_table: data_cdr/raw/EnsemblToHGNC.tsv
+
+expression: data_cancer/rawdata_TCGA/counts_gene.tsv
+gene_ids: data_cancer/rawdata_TCGA/ensembl_gene_ids.txt
+metadata: data_cancer/rawdata_TCGA/TCGA_ID.tsv
+clinical: data_cancer/rawdata_TCGA/mmc1.csv
+
+gene_sets:
+  - data_cancer/rawdata_TCGA/msigdb.gmt
+  - data_cancer/rawdata_TCGA/LM22.txt
+
+# Optional: an Ensembl->HGNC table from `cancer-map-ids`, consulted before
+# `hgnc_table` when the HGNC export lacks an Ensembl id for a gene.
+# ensembl_to_hgnc: data_cancer/prepared/ensembl_to_hgnc.tsv
+
+output_dir: data_cancer/processed
+years: [1, 2, 3, 4, 5]
+
+# log1p: natural log of the counts, which is what the shipped bundle contains
+# (its values reach 20.2, above ln(1e6), so they are not TPM).
+# log1p_tpm: the paper's description; needs bp_length in `gene_ids`.
+transform: log1p
+
+# Null derives the cutoff the way the paper does: the 95th percentile of the
+# deceased samples pooled with the censored samples above the censored median.
+# On the shipped raw data that reproduces the published 3,595 days.
+max_survival_days: null

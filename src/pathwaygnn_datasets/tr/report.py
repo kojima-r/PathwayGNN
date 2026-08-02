@@ -387,14 +387,16 @@ def run_tr_report(cfg: dict[str, Any]) -> dict[str, Any]:
             cv_rows.append([
                 name, variant, bool(summary["variant"].get("use_graph")),
                 summary["mean_auc"], summary["std_auc"],
+                *[summary.get(f"mean_{metric}", math.nan) for metric in METRICS[1:]],
                 min(summary["fold_auc"]), max(summary["fold_auc"]),
                 _auc(entry[0], entry[1]) if entry else math.nan,
                 len(summary["fold_auc"]),
             ])
             fold_rows.append([name, variant, *summary["fold_auc"],
                               summary["mean_auc"], summary["std_auc"]])
-    cv_header = ["task", "variant", "uses_graph", "mean_auc", "std_auc", "min_fold_auc",
-                 "max_fold_auc", "pooled_auc", "folds"]
+    cv_header = ["task", "variant", "uses_graph", "mean_auc", "std_auc",
+                 *[f"mean_{metric}" for metric in METRICS[1:]],
+                 "min_fold_auc", "max_fold_auc", "pooled_auc", "folds"]
     tsv(output / "cv_summary.tsv", cv_header, cv_rows)
     tsv(output / "cv_fold_auc.tsv",
         ["task", "variant", *[f"fold_{index}" for index in range(5)], "mean", "std"], fold_rows)
@@ -477,8 +479,10 @@ def run_tr_report(cfg: dict[str, Any]) -> dict[str, Any]:
         for model, item in benchmark[name].items():
             benchmark_rows.append([name, model, *[item["mean"][metric] for metric in METRICS]])
         for variant, summary in conditions[name].items():
-            benchmark_rows.append([name, f"{variant} (pathwaygnn cv)", summary["mean_auc"],
-                                   *[math.nan] * (len(METRICS) - 1)])
+            benchmark_rows.append([
+                name, f"{variant} (pathwaygnn cv)",
+                *[summary.get(f"mean_{metric}", math.nan) for metric in METRICS],
+            ])
     tsv(output / "benchmark_comparison.tsv", ["task", "model", *METRICS], benchmark_rows)
 
     # --- attributions -------------------------------------------------------
@@ -527,6 +531,22 @@ def run_tr_report(cfg: dict[str, Any]) -> dict[str, Any]:
 
     # --- document -----------------------------------------------------------
     covered = [f"{task}/{variant}" for task in tasks for variant in conditions.get(task, {})]
+    collapsed = [
+        f"{task}/{variant}"
+        for task in tasks
+        for variant, summary in conditions.get(task, {}).items()
+        if summary.get("mean_f1") == 0
+    ]
+    threshold_note = (
+        "`cv` trains with an unweighted BCE loss — unlike `finetune`, which applies `pos_weight` — "
+        "so on imbalanced labels the 0.5 operating point collapses onto the majority class. That is "
+        f"what happens here: {len(collapsed)} of {len(covered)} conditions "
+        f"({', '.join(collapsed)}) score F1 exactly 0 at 0.5 while their ROC-AUC is not at chance. "
+        "The ranking carries signal; the default threshold does not expose it."
+        if collapsed else
+        "`cv` trains with an unweighted BCE loss — unlike `finetune`, which applies `pos_weight` — "
+        "so on imbalanced labels the 0.5 operating point drifts towards the majority class."
+    )
     status = (
         f"{len(covered)} cross-validation conditions, {len(finetune)} holdout runs, "
         f"{len(benchmark)} baseline runs, {len(attributions)} attribution runs"
@@ -577,7 +597,11 @@ non-zero genes per row of each channel after the 1e-7 cutoff.
 {mdtable(cv_header, cv_rows)}
 
 `pooled_auc` is computed once over the concatenated held-out predictions of all folds, which is why
-it can sit outside the min/max of the per-fold values.
+it can sit outside the min/max of the per-fold values. The `mean_accuracy`/`precision`/`recall`/`f1`
+columns score the same folds at a fixed **0.5 decision threshold**; ROC-AUC is threshold-free, so a
+condition can rank well and still sit at a poor operating point (or the reverse).
+
+{threshold_note}
 
 Effect of the graph encoder:
 
@@ -588,8 +612,8 @@ Effect of the graph encoder:
 {mdtable(["task", "model", *METRICS], benchmark_rows)}
 
 The baselines consume exactly the same features as the GNN — the sparse perturbation and disease
-signatures — without the pathway graph. Only ROC-AUC is comparable to the cross-validation rows;
-the threshold metrics are omitted there because `cv` records ROC-AUC only.
+signatures — without the pathway graph. All five metrics are on the same footing: both sides are
+the mean over the same five folds, and both threshold at 0.5.
 
 ## Holdout fine-tuning (`pathwaygnn finetune`)
 

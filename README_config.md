@@ -141,6 +141,27 @@ variants:
 | `seed_index` | int | リスト中の位置 | seed の variant 成分。**位置ではなくこの値で決まる**ため、1条件だけ単独実行してもグリッド全体と同じ seed になる。 |
 | `end_to_end` | bool | `training.end_to_end` | variant 単位の上書き。 |
 
+### 保存される評価値
+
+`cv` は評価のたびに **ROC-AUC と、閾値 0.5 での accuracy / precision / recall / F1** を記録します
+（`src/pathwaygnn/training/metrics.py` の `METRICS`）。
+
+| 出力 | 形式 |
+| --- | --- |
+| `fold_<k>/metrics.json` の `history[]` | エポックごとに `test_auc`, `test_accuracy`, `test_precision`, `test_recall`, `test_f1`, `test_predicted_positive_ratio`, `test_actual_positive_ratio` |
+| `fold_<k>/metrics.json` の直下 | 採用エポックの `auc`, `accuracy`, `precision`, `recall`, `f1`, `predicted_positive_ratio`, `actual_positive_ratio` |
+| `<variant>/summary.json` | 指標ごとに `mean_<指標>`, `std_<指標>`, `fold_<指標>` |
+
+- **モデル選択（`training.selection`）は ROC-AUC のみで行います。** 閾値指標は記録専用です。
+- **AUC は sklearn の `roc_auc_score`** で計算されます（cancer の公開再現値がこれで出ているため）。
+  閾値指標だけが `metrics.threshold_metrics` 由来です。
+- **`cv` は `pos_weight` を使いません**（使うのは `finetune` だけ）。
+  そのため陽性率が低いタスクでは、閾値 0.5 の予測が多数派クラスに潰れて
+  precision / recall / F1 が 0 になることがあります。ROC-AUC が chance を上回っていても
+  起こりうる現象で、`docs/tr_report.md` の `kd_inh` / `oe_act` が実例です。
+- 閾値指標が記録される前に作られた fold は、**次に `cv` を実行したときに
+  `predictions.npz` から自動的に補完**されます（再学習は不要）。
+
 ### fold seed の決まり方
 
 ```
@@ -155,8 +176,8 @@ tr/cdr では定義順 0,1）。位置に依存しないので、グリッドの
 ## 5. `pathwaygnn finetune` — 単一分割の学習
 
 `src/pathwaygnn/training/finetune.py`。train/valid/test を1回だけ切り、
-**validation AUC で early stopping** します。`cv` が ROC-AUC しか出さないのに対し、
-こちらは accuracy / precision / recall / F1 まで出します。
+**validation AUC で early stopping** します。`cv` と違い、学習時に訓練データのクラス比から
+求めた `pos_weight` を適用する唯一のループです。
 
 | キー | 型 | 既定値 | 説明 |
 | --- | --- | --- | --- |
@@ -237,6 +258,26 @@ tr/cdr では定義順 0,1）。位置に依存しないので、グリッドの
 | `output_dir` | str | （必須） | 書き出し先。 |
 | `cutoff` | float | `1e-7` | シグネチャの絶対値がこの値未満のエントリを疎表現から落とす閾値。 |
 
+### `cancer-build-processed`（`configs/cancer/build_processed.yaml`）
+
+生の TCGA データから中間バンドル `data_cancer/processed/` を作ります。
+既にバンドルがある場合は不要です。詳細は [README_data_cancer.md](README_data_cancer.md)。
+
+| キー | 型 | 既定値 | 説明 |
+| --- | --- | --- | --- |
+| `graph_sif` | str | （必須） | PathwayCommons の SIF。`data_tr/raw/PathwayCommons12.All.hgnc.sif`（ヘッダ付きの `.txt` 版も可）。 |
+| `hgnc_table` | str | （必須） | HGNC complete-set エクスポート。`Approved symbol` と `Ensembl gene ID` の両方を使う。 |
+| `expression` | str | （必須） | recount2 のカウント行列（`counts_gene.tsv`）。 |
+| `gene_ids` | str | （必須） | `expression` の**行の並び順**に対応する遺伝子 ID の一覧。第2列に `bp_length` を置くと `log1p_tpm` が使える。**同梱していない**。 |
+| `metadata` | str | （必須） | `TCGA_ID.tsv`。列 UUID → 患者バーコードの対応。 |
+| `clinical` | str | （必須） | `mmc1.csv`（TCGA-CDR）。 |
+| `gene_sets` | list[str] | （必須） | がん関連遺伝子の母集合。`.gmt` は3列目以降、それ以外は1列目を遺伝子シンボルとして読み、和集合を取る。**同梱していない**。 |
+| `ensembl_to_hgnc` | str | （任意） | `cancer-map-ids` の出力。`hgnc_table` より優先して参照される。 |
+| `output_dir` | str | （必須） | `data_cancer/processed`。 |
+| `years` | list[int] | `[1,2,3,4,5]` | 生成する検証年。 |
+| `transform` | str | `log1p` | `log1p`: カウントの自然対数（公開バンドルと同じ）。`log1p_tpm`: TPM の自然対数（論文の記述。`gene_ids` に長さが必要）。 |
+| `max_survival_days` | float\|null | `null` | 長期生存の除外閾値。`null` なら論文の規則（「中央値超の打ち切り例 ∪ 死亡例」の95パーセンタイル）から導出する。実データでは論文の 3,595 日を再現する。 |
+
 ### `cancer-prepare`（`configs/cancer/prepare.yaml`）
 
 | キー | 型 | 既定値 | 説明 |
@@ -245,6 +286,7 @@ tr/cdr では定義順 0,1）。位置に依存しないので、グリッドの
 | `output_dir` | str | （必須） | |
 | `years` | list[int] | `[1,2,3,4,5]` | 変換する検証年。年ごとに channel とタスクが1つずつできる。 |
 | `num_genes` | int | `4448` | dense 行列の遺伝子数。実データと合わなければ失敗する。 |
+| `strict_sample_counts` | bool | `true` | 年別サンプル数を `PAPER_SAMPLE_COUNTS` と照合し、不一致なら失敗する。`cancer-build-processed` で作り直したバンドルは数件ずれるので `false` にする（警告を出して続行）。 |
 
 ### `cdr-prepare`（`configs/cdr/prepare.yaml`）
 
@@ -312,7 +354,7 @@ tr/cdr では定義順 0,1）。位置に依存しないので、グリッドの
 | --- | --- |
 | `configs/tr/{dataset,prepare,pretrain,cv,report}.yaml` | tr の基本一式 |
 | `configs/tr/{finetune,benchmark,ig}_{kd_inh,oe_act}.yaml` | tr のタスク別設定（`_oe_act` は `_kd_inh` を `defaults` で継承） |
-| `configs/cancer/{dataset,prepare,pretrain,pretrain_sweep,cv,ig,report,id_mapping}.yaml` | cancer 再現一式 |
+| `configs/cancer/{dataset,build_processed,prepare,pretrain,pretrain_sweep,cv,ig,report,id_mapping}.yaml` | cancer 再現一式 |
 | `configs/cdr/{dataset,prepare,pretrain,cv,report}.yaml` | cdr の基本一式 |
 | `configs/cdr/{finetune,benchmark,ig}_{drugwise,global}.yaml` | cdr のタスク別設定（`_global` は `_drugwise` を継承） |
 | `configs/cdr/upstream.json` | **YAML ではない**。`scripts/cdr/upstream/prepare_data.py` が読む GraphCDRScan 由来の JSON |

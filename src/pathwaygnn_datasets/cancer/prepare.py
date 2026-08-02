@@ -114,6 +114,7 @@ def prepare_cancer_dataset(
     output_dir: str | Path,
     years: Sequence[int] = (1, 2, 3, 4, 5),
     num_genes: int = 4448,
+    strict_sample_counts: bool = True,
 ) -> dict[str, Any]:
     source, output = Path(source_dir).resolve(), Path(output_dir).resolve()
     legacy = source / "processed"
@@ -140,10 +141,23 @@ def prepare_cancer_dataset(
         samples = _load_tsv(legacy / f"{year}years_sample.tsv", np.float64)
         samples = samples[np.argsort(samples[:, 0])]
         num_samples = labels.shape[0]
-        if num_samples != PAPER_SAMPLE_COUNTS[year] or samples.shape != (num_samples, 35):
+        if samples.shape != (num_samples, 35):
             raise ValueError(
                 f"Unexpected {year}-year shape: labels={labels.shape}, samples={samples.shape}"
             )
+        if num_samples != PAPER_SAMPLE_COUNTS[year]:
+            message = (
+                f"{year}-year has {num_samples} samples, but Supplementary Table 1 reports "
+                f"{PAPER_SAMPLE_COUNTS[year]}"
+            )
+            if strict_sample_counts:
+                raise ValueError(
+                    f"{message}. A bundle rebuilt by `cancer-build-processed` legitimately "
+                    "differs by a few samples (it omits the serialized-header row and resolves "
+                    "a handful of clinical records differently); set "
+                    "`strict_sample_counts: false` to accept it."
+                )
+            print(json.dumps({"stage": "cancer_prepare", "warning": message}))
         channel = f"expression_{year}year"
         channel_dir = writer.dense_channel(channel, num_samples, num_genes)
         _convert_node_input(

@@ -19,6 +19,37 @@ manuscript final-epoch evaluation protocol. Completed fold artifacts are reused.
 NA means that a full condition has not completed. Fold values are exported to
 outputs/cancer/report/table1_fold_auc.tsv.
 
+## Threshold metrics at 0.5
+
+| year | variant | mean_auc | mean_accuracy | mean_precision | mean_recall | mean_f1 |
+|---|---|---|---|---|---|---|
+| 1 | dnn | 0.6078 | 0.6300 | 0.9119 | 0.6481 | 0.7397 |
+| 1 | dnn_cancer | 0.7386 | 0.7194 | 0.9373 | 0.7326 | 0.8219 |
+| 1 | gnn_dnn | 0.7377 | 0.6309 | 0.9453 | 0.6203 | 0.7469 |
+| 1 | gnn_dnn_cancer | 0.7558 | 0.7094 | 0.9421 | 0.7171 | 0.8122 |
+| 2 | dnn | 0.6032 | 0.5498 | 0.7877 | 0.5297 | 0.6249 |
+| 2 | dnn_cancer | 0.7599 | 0.6879 | 0.8609 | 0.6873 | 0.7615 |
+| 2 | gnn_dnn | 0.7609 | 0.6879 | 0.8662 | 0.6804 | 0.7605 |
+| 2 | gnn_dnn_cancer | 0.7876 | 0.7221 | 0.8674 | 0.7347 | 0.7940 |
+| 3 | dnn | 0.5970 | 0.5682 | 0.6485 | 0.5814 | 0.6072 |
+| 3 | dnn_cancer | 0.7543 | 0.6813 | 0.7581 | 0.6802 | 0.7140 |
+| 3 | gnn_dnn | 0.7696 | 0.6862 | 0.7834 | 0.6547 | 0.7059 |
+| 3 | gnn_dnn_cancer | 0.7837 | 0.7109 | 0.7735 | 0.7226 | 0.7457 |
+| 4 | dnn | 0.5976 | 0.5633 | 0.5257 | 0.6155 | 0.5600 |
+| 4 | dnn_cancer | 0.7507 | 0.6920 | 0.7133 | 0.5682 | 0.6287 |
+| 4 | gnn_dnn | 0.7670 | 0.6678 | 0.6506 | 0.7007 | 0.6561 |
+| 4 | gnn_dnn_cancer | 0.7837 | 0.7087 | 0.6771 | 0.7069 | 0.6908 |
+| 5 | dnn | 0.6076 | 0.5452 | 0.4104 | 0.6707 | 0.5053 |
+| 5 | dnn_cancer | 0.7570 | 0.7073 | 0.5778 | 0.6255 | 0.5992 |
+| 5 | gnn_dnn | 0.7486 | 0.6394 | 0.5124 | 0.7433 | 0.5920 |
+| 5 | gnn_dnn_cancer | 0.7845 | 0.7068 | 0.5814 | 0.6790 | 0.6165 |
+
+Table 1 compares ROC-AUC because that is the metric the manuscript reports. These are the same
+folds and the same held-out predictions scored at a fixed 0.5 decision threshold, so they describe
+the operating point rather than the ranking. The labels are imbalanced and shift with the
+verification year (88.6% survival at 1 year, 34.9% at 5), so accuracy is not comparable across
+years; also exported to outputs/cancer/report/table1_threshold_metrics.tsv.
+
 ## Supplementary Table 1: data audit
 
 | year | total | death | survival |

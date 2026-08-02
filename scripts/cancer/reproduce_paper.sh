@@ -7,6 +7,12 @@ STAGE="${1:-full}"
 run_stage() {
   local name="$1"
   case "${name}" in
+    build-processed)
+      # Rebuilds data_cancer/processed/ from rawdata_TCGA/. Not part of `full`:
+      # the shipped bundle is already there, and this stage needs two inputs that
+      # cannot be redistributed (see configs/cancer/build_processed.yaml).
+      pathwaygnn-data cancer-build-processed --config configs/cancer/build_processed.yaml
+      ;;
     prepare)
       pathwaygnn-data cancer-prepare --config configs/cancer/prepare.yaml
       ;;
