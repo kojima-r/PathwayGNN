@@ -12,7 +12,7 @@ PathwayGNN 内で完結します。
 
 ## 0. 最初に読む: リポジトリをクローンした直後の状態
 
-**`data_cdr/` はリポジトリに含まれていません**（`.gitignore` 対象）。容量が 12 GB あり、
+**`data_cdr/` はリポジトリに含まれていません**（`.gitignore` 対象）。容量が 11 GB あり、
 一部の入力（COSMIC Cancer Gene Census）が登録済みユーザーの手動ダウンロードを
 要求するためです。したがって新規クローンでは、下の①から順に実行して作る必要があります。
 
@@ -37,7 +37,7 @@ bash scripts/cdr/prepare.sh
 bash scripts/cdr/reproduce.sh
 ```
 
-所要時間の目安: ①は回線次第（1.7 GB のダウンロード、hg38.2bit が支配的）、
+所要時間の目安: ①は回線次第（約 1.2 GB のダウンロード、hg38.2bit が支配的）、
 ②は変異シグネチャの算出が重く数時間、③は約4分、④は3 GPU で約1時間。
 
 ---
@@ -46,7 +46,7 @@ bash scripts/cdr/reproduce.sh
 
 ```text
 data_cdr/                     全体が .gitignore 対象（容量とライセンスのため）
-├── raw/                      2.4 GB — 上流ステージの入力
+├── raw/                      1.6 GB — 上流ステージの入力
 │   ├── sources/              取得した公開ファイルの原本（監査用に保持）
 │   ├── CosmicCLP_MutantExport.tsv     312 MB
 │   ├── v17_fitted_dose_response.csv    41 MB
@@ -56,7 +56,7 @@ data_cdr/                     全体が .gitignore 対象（容量とライセ�
 │   ├── cancer_gene_census.csv         5.3 KB
 │   ├── reactome_rev2.graph.tsv        7.0 MB
 │   ├── EnsemblToHGNC.tsv              1.5 MB
-│   ├── hg38.2bit / hg19.2bit          835 MB / 816 MB
+│   ├── hg38.2bit                      835 MB
 │   ├── fingerprints.csv               1.4 MB（生成物）
 │   ├── maf.csv                        130 MB（生成物・キャッシュ）
 │   └── SHA256SUMS
@@ -70,7 +70,7 @@ data_cdr/                     全体が .gitignore 対象（容量とライセ�
 └── prepared/                 2.7 GB — 生成物。pathwaygnn が読む汎用形式
 ```
 
-`data_tr/raw` と違い Git 管理外です。容量（2.4 GB / 9.3 GB）に加えて、
+`data_tr/raw` と違い Git 管理外です。容量（1.6 GB / 9.3 GB）に加えて、
 COSMIC Cancer Gene Census が登録済みユーザーの手動ダウンロードを要求するためです。
 
 ---
@@ -134,7 +134,8 @@ CGC からは `GENE_SYMBOL` 列しか読まず、v104 の GRCh37 版と GRCh38 �
 変異シグネチャの参照塩基取得も hg38 でなければなりません（`HG2BIT: raw/hg38.2bit`）。
 検証結果は、サンプリングした SNV 20,000 件中 20,000 件が hg38 と一致、hg19 では
 19,925 件中 4,874 件（24.5%＝偶然一致の水準）で、約 17k の座標が hg19 の染色体長を超えます。
-`hg19.2bit` は検証の痕跡として残っているだけで、パイプラインは使いません。
+検証に使った `hg19.2bit`（816 MB）は削除済みです。パイプラインは読まないため再取得は不要で、
+`download_raw_data.py` も hg38 しか取得しません。
 
 `cancer_gene_census.csv` は整合性のため GRCh38 版から取っていますが、座標は一切読まれません。
 

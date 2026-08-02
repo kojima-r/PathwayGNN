@@ -1,0 +1,40 @@
+# pathwaygnn-data tr-build-processed
+#
+# Builds the bundle `data_tr/processed/` that `tr-prepare` reads, from the public
+# sources under `data_tr/raw/` (fetch them with
+# `python -m scripts.tr.upstream.download_raw_data`).
+#
+# Needs h5py — the LINCS Level 5 matrix is an HDF5 (GCTX) file:
+#   pip install -e '.[tr-upstream]'
+
+raw_dir: data_tr/raw
+output_dir: data_tr/processed
+
+# Input file names inside raw_dir. Override only if you renamed a download.
+gctx: GSE92742_Broad_LINCS_Level5_COMPZ.MODZ_n473647x12328.gctx
+sig_info: GSE92742_Broad_LINCS_sig_info.txt
+gene_info: GSE92742_Broad_LINCS_gene_info.txt
+creeds: disease_signatures-v1.0.json
+hgnc: hgnc_complete_set.txt
+graph_sif: PathwayCommons12.All.hgnc.sif
+kegg_omim: kegg_disease_omim.list
+disease_ontology: HumanDO.obo
+
+# The two corpus decisions the reference implementation makes. Both are recorded
+# in build_manifest.json because they change the data, not just its encoding.
+#   per_cell_line: keep (pert_iname, cell_id) as the unit of a profile. false
+#     averages the cell lines away, leaving one row per perturbed gene.
+#   human_only: keep only `organism == "human"` CREEDS signatures.
+per_cell_line: true
+human_only: true
+
+# Labels. The Kyutech group published them as target_disease_data.zip, whose URL
+# no longer resolves; the downloader fetches the DOID-keyed tables from this
+# repository's release mirror into raw_dir, and only their gene column is
+# re-renamed with the current HGNC converter. Point `kegg_labels` at the
+# KEGG-keyed .txt originals if you have them and the KEGG -> OMIM -> DOID
+# conversion runs instead.
+labels_dir: data_tr/raw
+# kegg_labels:
+#   inhibitory: data_tr/raw/inhibitory_target_disease.txt
+#   activatory: data_tr/raw/activatory_target_disease.txt

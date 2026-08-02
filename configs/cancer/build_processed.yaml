@@ -14,7 +14,10 @@
 #     `.gmt` files and plain one-column symbol lists are both accepted.
 # Both are validated on load, so a missing or mismatched file fails immediately.
 
-graph_sif: data_tr/raw/PathwayCommons12.All.hgnc.sif
+# Pathway Commons v12, three-column SIF. Byte-identical to the Git-tracked
+# `data_tr/raw/PathwayCommons12.All.hgnc.sif` (same SHA-256), which is the
+# fallback when this untracked copy is absent.
+graph_sif: data_cancer/PathwayCommons12.All.hgnc.sif
 # Any HGNC complete-set export works; this one ships with the drug-response
 # corpus and carries both "Approved symbol" and "Ensembl gene ID".
 hgnc_table: data_cdr/raw/EnsemblToHGNC.tsv

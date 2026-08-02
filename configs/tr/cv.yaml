@@ -25,6 +25,9 @@ training:
   shuffle: true
   end_to_end: false
   loss_reduction: mean
+  # Same loss as `finetune`: negatives/positives of the fold's training split.
+  # Without it the 8.2% positive rate collapses kd_inh onto the majority class.
+  pos_weight: auto
   scheduler_patience: 10
   selection: final_epoch
   resume: true

@@ -6,6 +6,7 @@ before training starts and leave a dataset in the generic
 :mod:`pathwaygnn.data.format` layout, which the ``pathwaygnn`` CLI then consumes
 without any dataset knowledge of its own.
 
+    pathwaygnn-data tr-build-processed --config configs/tr/build_processed.yaml
     pathwaygnn-data tr-prepare      --config configs/tr/prepare.yaml
     pathwaygnn-data cancer-build-processed --config configs/cancer/build_processed.yaml
     pathwaygnn-data cancer-prepare  --config configs/cancer/prepare.yaml
@@ -25,6 +26,7 @@ from typing import Any
 from pathwaygnn.config import load_config
 
 HELP = {
+    "tr-build-processed": "LINCS L1000 + CREEDS + PathwayCommons -> the bundle data_tr/processed",
     "tr-prepare": "PathwayCommons + perturbation/disease signatures -> dataset `tr`",
     "cancer-prepare": "TCGA survival bundle -> dataset `cancer`",
     "cancer-build-processed": "raw TCGA + PathwayCommons -> the upstream bundle data_cancer/processed",
@@ -37,11 +39,17 @@ HELP = {
 
 
 def _run(command: str, cfg: dict[str, Any]) -> Any:
+    if command == "tr-build-processed":
+        from pathwaygnn_datasets.tr.build import build_tr_processed
+
+        return build_tr_processed(cfg)
     if command == "tr-prepare":
         from pathwaygnn_datasets.tr.prepare import prepare_tr_dataset
 
         return prepare_tr_dataset(
-            cfg["raw_dir"], cfg["output_dir"], float(cfg.get("cutoff", 1e-7))
+            cfg.get("source_dir", cfg.get("raw_dir")),
+            cfg["output_dir"],
+            float(cfg.get("cutoff", 1e-7)),
         )
     if command == "cancer-build-processed":
         from pathwaygnn_datasets.cancer.build import build_cancer_processed

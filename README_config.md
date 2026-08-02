@@ -121,6 +121,7 @@ CUDA なら NCCL、なければ Gloo。rank ごとの seed は `seed + rank`、�
 | `training.end_to_end` | bool | `true` | `true` で encoder も同時に更新。`false` なら埋め込みを fold 開始時に1回だけ計算して使い回す（**最大の高速化レバー**）。variant 側の `end_to_end` が優先される。 |
 | `training.loss_clip` | float\|null | `null` | サンプルごとの BCE 損失の下限クリップ。cancer は参照実装に合わせて `0.01`。 |
 | `training.loss_reduction` | str | `mean` | `sum` または `mean`。cancer は `sum`。 |
+| `training.pos_weight` | str\|float\|null | `null` | BCE の陽性クラス重み。`auto` は fold の学習側の `陰性数 / 陽性数`（**`finetune` と同じ規則**）、数値ならその値、`null` なら重み付けなし。採用値は `metrics.json` の `pos_weight` に記録される。cancer / cdr は `null`（公開数値の再現のため）、tr は `auto`。 |
 | `training.grad_clip_value` | float\|null | `10.0` | `clip_grad_value_` の閾値。**ヘッドにのみ適用**され encoder には適用されない。 |
 | `training.selection` | str | `final_epoch` | `final_epoch`: 最終エポックのモデルを採用（論文プロトコル）。`best_test_auc`: held-out fold の AUC が最良のエポックを採用（＝リーク。公開コード互換のためだけに存在）。 |
 | `training.resume` | bool | `true` | fold ディレクトリに `metrics.json` / `predictions.npz` / `model.pt` が揃っていればそれを再利用する。**再実行を強制するにはその fold ディレクトリを削除する**。 |
@@ -250,11 +251,34 @@ tr/cdr では定義順 0,1）。位置に依存しないので、グリッドの
 
 これらは `dataset:` ブロックを持ちません。生データを読んで**汎用形式を書き出す**だけです。
 
+### `tr-build-processed`（`configs/tr/build_processed.yaml`）
+
+公開ソース（`data_tr/raw`）から中間バンドル `data_tr/processed/` を作ります。
+既にバンドルがある場合は不要です。詳細は [README_data_tr.md](README_data_tr.md)。
+**h5py が必要**です（`pip install -e '.[tr-upstream]'`）。
+
+| キー | 型 | 既定値 | 説明 |
+| --- | --- | --- | --- |
+| `raw_dir` | str | `data_tr/raw` | 公開ソースの置き場。 |
+| `output_dir` | str | `data_tr/processed` | 書き出し先。 |
+| `gctx` | str | `GSE92742_..._n473647x12328.gctx` | LINCS L1000 Level 5 行列（GCTX＝HDF5）。 |
+| `sig_info` / `gene_info` | str | `GSE92742_Broad_LINCS_{sig,gene}_info.txt` | シグネチャ条件表とランドマーク遺伝子表。 |
+| `creeds` | str | `disease_signatures-v1.0.json` | CREEDS の手動疾患シグネチャ。 |
+| `hgnc` | str | `hgnc_complete_set.txt` | 遺伝子シンボル変換表の元。 |
+| `graph_sif` | str | `PathwayCommons12.All.hgnc.sif` | パスウェイグラフ。 |
+| `kegg_omim` / `disease_ontology` | str | `kegg_disease_omim.list` / `HumanDO.obo` | KEGG DISEASE → OMIM → DOID の変換に使う。 |
+| `per_cell_line` | bool | `true` | `true` で摂動プロファイルを `(pert_iname, cell_id)` 単位にする。`false` は細胞株を平均で潰す。 |
+| `human_only` | bool | `true` | `true` で CREEDS の `organism == "human"` だけを使う。 |
+| `labels_dir` | str | `raw_dir` | DOID 変換済みラベルの置き場。`kegg_labels` が無いときここの2ファイルを現行 HGNC で再変換して使う。 |
+| `kegg_labels` | dict | （任意） | `inhibitory` / `activatory` → KEGG ID 版ラベル `.txt`。与えると KEGG→DOID 変換の経路が走る。 |
+
+`per_cell_line` と `human_only` はデータ内容そのものを変えるため、`build_manifest.json` に記録されます。
+
 ### `tr-prepare`（`configs/tr/prepare.yaml`）
 
 | キー | 型 | 既定値 | 説明 |
 | --- | --- | --- | --- |
-| `raw_dir` | str | （必須） | `data_tr/raw`。必要な6ファイルを自動検出する。 |
+| `source_dir` | str | （必須） | `data_tr/processed`。必要な6ファイルを自動検出する（旧キー `raw_dir` も可）。 |
 | `output_dir` | str | （必須） | 書き出し先。 |
 | `cutoff` | float | `1e-7` | シグネチャの絶対値がこの値未満のエントリを疎表現から落とす閾値。 |
 
@@ -265,7 +289,7 @@ tr/cdr では定義順 0,1）。位置に依存しないので、グリッドの
 
 | キー | 型 | 既定値 | 説明 |
 | --- | --- | --- | --- |
-| `graph_sif` | str | （必須） | PathwayCommons の SIF。`data_tr/raw/PathwayCommons12.All.hgnc.sif`（ヘッダ付きの `.txt` 版も可）。 |
+| `graph_sif` | str | （必須） | PathwayCommons の SIF。同梱設定は `data_cancer/PathwayCommons12.All.hgnc.sif`（`data_tr/raw/PathwayCommons12.All.hgnc.sif` と同一内容。ヘッダ付きの `.txt` 版も可）。 |
 | `hgnc_table` | str | （必須） | HGNC complete-set エクスポート。`Approved symbol` と `Ensembl gene ID` の両方を使う。 |
 | `expression` | str | （必須） | recount2 のカウント行列（`counts_gene.tsv`）。 |
 | `gene_ids` | str | （必須） | `expression` の**行の並び順**に対応する遺伝子 ID の一覧。第2列に `bp_length` を置くと `log1p_tpm` が使える。**同梱していない**。 |

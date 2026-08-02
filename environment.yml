@@ -13,6 +13,9 @@ dependencies:
   - scikit-learn>=1.6
   - matplotlib>=3.10
   - xgboost>=3.0
+  # Only `pathwaygnn-data tr-build-processed` needs this, to read the LINCS
+  # Level 5 GCTX (HDF5) matrix. Also available as the `tr-upstream` extra.
+  - h5py>=3.11
   - pytest>=8.3
   - pip
   - pip:

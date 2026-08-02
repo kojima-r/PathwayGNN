@@ -19,26 +19,32 @@ def _write(path: Path, rows: list[list[object]]) -> None:
         csv.writer(handle, delimiter="\t").writerows(rows)
 
 
-def make_raw(root: Path) -> None:
-    _write(
-        root / "PathwayCommons12.All.hgnc.sif",
-        [["A", "activates", "B"], ["B", "binds", "C"]],
-    )
+def make_processed(root: Path, per_cell_line: bool = False) -> None:
+    """A tiny stand-in for the bundle written by `tr-build-processed`."""
+    _write(root / "graph.tsv", [["A", "activates", "B"], ["B", "binds", "C"]])
     _write(
         root / "disease_specific_signature.tsv",
         [
-            ["do_id", "human_gene_name", "expression"],
+            ["do_id", "gene_name", "expression"],
             ["D1", "A", 1.0],
             ["D1", "B", -0.5],
             ["D2", "C", 0.8],
             ["D2", "UNKNOWN", 0.9],
         ],
     )
-    signature = [
-        ["pert_iname", "A", "B", "C", "OUT"],
-        ["P1", 1, 0, -1, 2],
-        ["P2", 0, 1, 0.5, 2],
-    ]
+    if per_cell_line:
+        signature = [
+            ["pert_iname", "cell_id", "A", "B", "C", "OUT"],
+            ["P1", "MCF7", 1, 0, -1, 2],
+            ["P1", "PC3", 0.5, 0, -1, 2],
+            ["P2", "MCF7", 0, 1, 0.5, 2],
+        ]
+    else:
+        signature = [
+            ["pert_iname", "A", "B", "C", "OUT"],
+            ["P1", 1, 0, -1, 2],
+            ["P2", 0, 1, 0.5, 2],
+        ]
     labels = [
         ["gene", "doid", "label"],
         ["P1", "D1", 1],
@@ -47,10 +53,14 @@ def make_raw(root: Path) -> None:
         ["P2", "D2", 1],
         ["MISSING", "D1", 1],
     ]
-    for name in ("knockdown_signature_sample.tsv", "overexpression_signature_sample.tsv"):
+    for name in ("knockdown_signature.tsv", "overexpression_signature.tsv"):
         _write(root / name, signature)
     for name in ("inhibitory_target_disease.tsv", "activatory_target_disease.tsv"):
         _write(root / name, labels)
+
+
+# `per_cell_line: false` bundles have no cell_id column; both read.
+make_raw = make_processed
 
 
 def test_prepare_writes_a_generic_dataset(tmp_path: Path) -> None:
@@ -73,6 +83,7 @@ def test_prepare_writes_a_generic_dataset(tmp_path: Path) -> None:
     assert task.channel_names == dataset.task("oe_act").channel_names == ("perturbation", "disease")
     assert [channel.source for channel in task.channels] == ["perturbation_kd", "disease"]
     assert task.num_samples == 4 and task.manifest["source"]["label_rows_skipped"] == 1
+    assert task.manifest["source"]["num_perturbations"] == 2
     assert task.group_names == ("D1", "D2")
     assert task.covariate_dim == 0
     assert task.seed_offset == 0 and dataset.task("oe_act").seed_offset == 1
@@ -103,6 +114,22 @@ def test_prepared_samples_feed_the_models(tmp_path: Path) -> None:
     )
     assert logits.shape == (2,)
     logits.sum().backward()
+
+
+def test_cell_line_profiles_expand_each_label_row(tmp_path: Path) -> None:
+    """A (gene, disease) label becomes one sample per cell line of that gene."""
+    processed, prepared = tmp_path / "processed", tmp_path / "prepared"
+    processed.mkdir()
+    make_processed(processed, per_cell_line=True)
+    prepare_tr_dataset(processed, prepared)
+    task = GraphDataset.open(prepared, "tr").task("kd_inh")
+    source = task.manifest["source"]
+    assert source["num_perturbations"] == 3 and source["num_perturbed_genes"] == 2
+    assert source["perturbations"] == ["P1|MCF7", "P1|PC3", "P2|MCF7"]
+    # P1 has two profiles and two label rows, P2 has one profile and two rows.
+    assert source["label_rows_used"] == 4 and task.num_samples == 6
+    # P1/D1 is positive in both cell lines and P2/D2 in one, so 3 of the 6 samples.
+    assert json.loads((prepared / "tasks/kd_inh/task.json").read_text())["num_positive"] == 3
 
 
 def test_metrics_and_stratified_split() -> None:

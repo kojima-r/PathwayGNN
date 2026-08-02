@@ -52,13 +52,13 @@ data_cancer/
 │   ├── mmc1.csv                       3.1 MB  TCGA-CDR 臨床情報（Liu et al. 2018）
 │   ├── ensembl_gene_ids.txt           ← 別途用意（§4）
 │   └── msigdb.gmt / LM22.txt          ← 別途用意（§4）
-├── PathwayCommons13.All.hgnc.txt      1.0 GB（参考。実際に使うのは PC12。§3.1）
+├── PathwayCommons12.All.hgnc.sif      58 MB  パスウェイグラフ（§3.1）
 ├── processed/                ①の出力＝②の入力
-├── artifacts/                リファクタ前のレイアウト。もう読まれない
 └── prepared/                 ②の出力（.gitignore 対象）
 ```
 
-グラフの入力は `data_tr/raw/PathwayCommons12.All.hgnc.sif`（**Git 管理下**）です。
+グラフの入力は `data_cancer/PathwayCommons12.All.hgnc.sif` です（`data_tr/raw/` にある
+**Git 管理下**の同名ファイルと SHA-256 が一致する複製で、どちらを指しても結果は同じです）。
 HGNC 対応表は `data_cdr/raw/EnsemblToHGNC.tsv` を既定で使います（HGNC の
 complete-set エクスポートなら何でも構いません）。
 
@@ -69,10 +69,9 @@ complete-set エクスポートなら何でも構いません）。
 ### 3.1 グラフ: PathwayCommons
 
 論文はナレッジグラフとして Pathway Commons を使い、13種の関係タイプを持つと記述しています。
-`data_cancer/` に置かれた `PathwayCommons13.All.hgnc.txt` は参考素材で、**公開バンドルの
-グラフは PathwayCommons 12 と一致します**。次の3点を照合して確認済みです。
+**公開バンドルのグラフは PathwayCommons 12 と一致します**。次の3点を照合して確認済みです。
 
-| | 公開バンドル | `data_tr/raw/PathwayCommons12.All.hgnc.sif` から再構築 |
+| | 公開バンドル | `PathwayCommons12.All.hgnc.sif` から再構築 |
 | --- | --- | --- |
 | ノード数 | 30,918 | **30,918** |
 | 関係タイプ数 | 13 | **13** |

@@ -31,7 +31,9 @@ PathwayGNN は次の4実装を、現行 PyTorch / PyTorch Geometric API で再�
 前処理をすべて終えてから学習を開始します。
 
 ```bash
-pathwaygnn-data tr-prepare     --config configs/tr/prepare.yaml       # data_tr/raw       -> data_tr/prepared
+pathwaygnn-data tr-build-processed --config configs/tr/build_processed.yaml
+                                                                      # data_tr/raw       -> data_tr/processed
+pathwaygnn-data tr-prepare     --config configs/tr/prepare.yaml       # data_tr/processed -> data_tr/prepared
 pathwaygnn-data cancer-build-processed --config configs/cancer/build_processed.yaml
                                                                       # rawdata_TCGA/     -> data_cancer/processed
 pathwaygnn-data cancer-prepare --config configs/cancer/prepare.yaml   # data_cancer/...   -> data_cancer/prepared
@@ -117,10 +119,13 @@ pip install -e .
 
 ## データ準備
 
-raw データ一式は `data_tr/raw` に含まれており、Git管理対象です。`prepared` はrawと前処理コードから再生成できるためGit管理対象外です。
+`data_tr` は3段階です。`raw`（公開ソース 22 GB）→ `processed`（中間バンドル）→ `prepared`（汎用形式）。
+`processed` が既にあれば③だけで済みます。詳細は [README_data_tr.md](README_data_tr.md)。
 
 ```bash
-bash scripts/tr/prepare.sh
+python -m scripts.tr.upstream.download_raw_data   # ① 公開ソース取得 -> data_tr/raw
+bash scripts/tr/build_processed.sh                # ② 要 .[tr-upstream] -> data_tr/processed
+bash scripts/tr/prepare.sh                        # ③ -> data_tr/prepared
 ```
 
 このスクリプトはリポジトリの場所に依存せずプロジェクトルートへ移動してから、次のCLIと同じ処理を実行します。
@@ -129,20 +134,19 @@ bash scripts/tr/prepare.sh
 pathwaygnn-data tr-prepare --config configs/tr/prepare.yaml
 ```
 
-以下を自動検出します。
+`data_tr/processed` から以下を自動検出します。
 
 ```text
-PathwayCommons12.All.hgnc.sif
+graph.tsv
 disease_specific_signature.tsv
-knockdown_signature_sample.tsv
-overexpression_signature_sample.tsv
+knockdown_signature.tsv
+overexpression_signature.tsv
 inhibitory_target_disease.tsv
 activatory_target_disease.tsv
 ```
 
-PathwayCommons は旧 README の `.sif.tsv` 名にも対応します。生成物は channel（`disease`,
-`perturbation_kd`, `perturbation_oe`）、task（`kd_inh`, `oe_act`）、および件数と除外行を記録した
-`dataset.json` / `task.json` です。
+生成物は channel（`disease`, `perturbation_kd`, `perturbation_oe`）、task（`kd_inh`, `oe_act`）、
+および件数と除外行を記録した `dataset.json` / `task.json` です。
 
 ## グラフ事前学習
 
@@ -340,6 +344,6 @@ git add .
 git commit -m "Initial PathwayGNN implementation"
 ```
 
-`prepared` データ、学習結果、チェックポイントは `.gitignore` の対象です。再現元となる `data_tr/raw` はGit管理対象です。
-`data_cdr/raw` と `data_cdr/processed` は容量（2.4 GB / 9.3 GB）と一部入力のライセンス
-（COSMIC は登録が必要）のため対象外で、`scripts/cdr/upstream/` から再生成します。
+`prepared` データ、学習結果、チェックポイントは `.gitignore` の対象です。
+`raw` と `processed` も容量のため対象外です（`data_tr` 21.5 GB、`data_cdr` 1.6 GB / 9.3 GB。
+COSMIC のように登録が必要な入力もあります）。いずれも取得スクリプトと build コマンドで再生成します。

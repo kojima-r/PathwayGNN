@@ -11,17 +11,18 @@ __pycache__/
 data_tr/prepared/
 data_cancer/prepared/
 data_cdr/prepared/
-# Pre-refactor layout, superseded by data_cancer/prepared/.
-data_cancer/artifacts/
-# The drug-response corpus: 2.4 GB of raw inputs (hg38.2bit, the CCLP export)
+# The drug-response corpus: 1.6 GB of raw inputs (hg38.2bit, the CCLP export)
 # and a 9.3 GB upstream bundle, both regenerable via scripts/cdr/upstream/, and
 # some raw inputs carry separate licences (COSMIC requires registration).
 data_cdr/raw/
 data_cdr/processed/
+# The target-repositioning corpus: 21.5 GB of raw inputs (the LINCS L1000 Level 5
+# GCTX matrix dominates) and the bundle built from them, both regenerable via
+# scripts/tr/upstream/download_raw_data.py + `pathwaygnn-data tr-build-processed`.
+data_tr/raw/
+data_tr/processed/
 outputs/
 *.pt
 *.pth
 *.ckpt
 events.out.tfevents.*
-
-# Source raw data is versioned so preprocessing is reproducible.

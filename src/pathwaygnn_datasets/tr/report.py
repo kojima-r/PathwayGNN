@@ -82,6 +82,15 @@ def _fold_histories(cv_dir: Path, task: str, variant: str) -> list[list[dict[str
     ]
 
 
+def _fold_pos_weights(cv_dir: Path) -> list[float]:
+    """The positive-class weights the folds actually trained with, if any."""
+    values = [
+        json.loads(path.read_text()).get("pos_weight")
+        for path in sorted(cv_dir.glob("*/*/fold_*/metrics.json"))
+    ]
+    return [float(value) for value in values if value is not None]
+
+
 def _channel_lengths(dataset: GraphDataset) -> dict[str, np.ndarray]:
     """Non-zero genes per row of every sparse channel, keyed by dataset channel."""
     lengths = {}
@@ -537,15 +546,25 @@ def run_tr_report(cfg: dict[str, Any]) -> dict[str, Any]:
         for variant, summary in conditions.get(task, {}).items()
         if summary.get("mean_f1") == 0
     ]
+    weights = _fold_pos_weights(cv_dir)
+    if weights:
+        loss_note = (
+            "`cv` weights the positive class by `pos_weight` "
+            f"({min(weights):.2f}–{max(weights):.2f} across folds, i.e. negatives/positives of each "
+            "fold's training split), which is the rule `finetune` uses, so both protocols optimise "
+            "the same loss"
+        )
+    else:
+        loss_note = (
+            "`cv` trains with an unweighted BCE loss — unlike `finetune`, which applies `pos_weight`"
+        )
     threshold_note = (
-        "`cv` trains with an unweighted BCE loss — unlike `finetune`, which applies `pos_weight` — "
-        "so on imbalanced labels the 0.5 operating point collapses onto the majority class. That is "
-        f"what happens here: {len(collapsed)} of {len(covered)} conditions "
-        f"({', '.join(collapsed)}) score F1 exactly 0 at 0.5 while their ROC-AUC is not at chance. "
-        "The ranking carries signal; the default threshold does not expose it."
+        f"{loss_note}. On imbalanced labels the 0.5 operating point still collapses onto one class "
+        f"for {len(collapsed)} of {len(covered)} conditions ({', '.join(collapsed)}), which score F1 "
+        "exactly 0 while their ROC-AUC is not at chance: the ranking carries signal that the default "
+        "threshold does not expose."
         if collapsed else
-        "`cv` trains with an unweighted BCE loss — unlike `finetune`, which applies `pos_weight` — "
-        "so on imbalanced labels the 0.5 operating point drifts towards the majority class."
+        f"{loss_note}; the 0.5 operating point is therefore comparable between the two tables."
     )
     status = (
         f"{len(covered)} cross-validation conditions, {len(finetune)} holdout runs, "
@@ -574,7 +593,7 @@ def run_tr_report(cfg: dict[str, Any]) -> dict[str, Any]:
 
 ## What this report covers
 
-Dataset **{dataset.name}** at `{dataset.manifest['source'].get('raw_dir', dataset.root)}`, prepared
+Dataset **{dataset.name}** at `{dataset.manifest['source'].get('source_dir', dataset.manifest['source'].get('raw_dir', dataset.root))}`, prepared
 into `{dataset.root}`: {dataset.num_nodes:,} graph nodes, {dataset.manifest['num_edges']:,} directed
 edges, {dataset.num_relations} relation types, tasks {', '.join(tasks)}. Run status: {status}.
 Graph pre-training: {pretrain_line}.

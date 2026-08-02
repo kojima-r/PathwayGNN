@@ -1,14 +1,21 @@
 """Target-repositioning (SLGCN-TR) preprocessing.
 
-Reads the raw PathwayCommons SIF, the disease signature, the knockdown and
-overexpression perturbation signatures and the two label tables, and writes one
-prepared dataset:
+Reads the bundle written by ``pathwaygnn-data tr-build-processed`` — the graph,
+the disease signature, the knockdown and overexpression perturbation signatures
+and the two label tables — and writes one prepared dataset:
 
 * channels ``disease``, ``perturbation_kd``, ``perturbation_oe`` (sparse)
 * tasks ``kd_inh`` and ``oe_act``, each binding the alias ``perturbation`` to its
   own signature table and sharing the single ``disease`` table
 * groups: the disease each sample targets, so that downstream per-group metrics
   and attributions are reported per disease
+
+A perturbation profile is keyed by ``(pert_iname, cell_id)``, so one label row
+(gene, disease) becomes one sample per cell line in which that gene was
+perturbed — the join the reference implementation performs when it builds its
+feature table. A signature table without a ``cell_id`` column (``per_cell_line:
+false`` at build time, which averages the cell lines away) still reads, and then
+produces exactly one sample per label row.
 """
 
 from __future__ import annotations
@@ -22,26 +29,28 @@ import torch
 
 from pathwaygnn.data.format import DatasetWriter, TaskChannel
 
-RAW_FILES = {
-    "graph": ("PathwayCommons12.All.hgnc.sif", "PathwayCommons12.All.hgnc.sif.tsv"),
+SOURCE_FILES = {
+    "graph": ("graph.tsv", "PathwayCommons12.All.hgnc.sif", "PathwayCommons12.All.hgnc.sif.tsv"),
     "disease": ("disease_specific_signature.tsv",),
-    "kd_signature": ("knockdown_signature_sample.tsv",),
-    "oe_signature": ("overexpression_signature_sample.tsv",),
+    "kd_signature": ("knockdown_signature.tsv", "knockdown_signature_sample.tsv"),
+    "oe_signature": ("overexpression_signature.tsv", "overexpression_signature_sample.tsv"),
     "kd_label": ("inhibitory_target_disease.tsv",),
     "oe_label": ("activatory_target_disease.tsv",),
 }
+DISEASE_GENE_COLUMNS = ("gene_name", "human_gene_name")
+ROW_SEPARATOR = "|"
 TASKS = (
     ("kd_inh", "kd_signature", "kd_label", "perturbation_kd"),
     ("oe_act", "oe_signature", "oe_label", "perturbation_oe"),
 )
 
 
-def _find(raw_dir: Path, names: Iterable[str]) -> Path:
+def _find(source_dir: Path, names: Iterable[str]) -> Path:
     for name in names:
-        candidate = raw_dir / name
+        candidate = source_dir / name
         if candidate.is_file():
             return candidate
-    raise FileNotFoundError(f"None of {list(names)} exists under {raw_dir}")
+    raise FileNotFoundError(f"None of {list(names)} exists under {source_dir}")
 
 
 def _read_graph(path: Path) -> tuple[list[str], list[str], torch.Tensor, torch.Tensor]:
@@ -77,8 +86,14 @@ def _read_disease(
     values: dict[str, list[tuple[int, float]]] = {}
     skipped = 0
     with path.open(encoding="utf-8", newline="") as handle:
-        for row in csv.DictReader(handle, delimiter="\t"):
-            gene_idx = gene_to_idx.get(row["human_gene_name"])
+        reader = csv.DictReader(handle, delimiter="\t")
+        gene_column = next(
+            (name for name in DISEASE_GENE_COLUMNS if name in (reader.fieldnames or [])), None
+        )
+        if gene_column is None:
+            raise KeyError(f"{path.name} has none of the gene columns {DISEASE_GENE_COLUMNS}")
+        for row in reader:
+            gene_idx = gene_to_idx.get(row[gene_column])
             value = float(row["expression"])
             if gene_idx is None:
                 skipped += 1
@@ -89,17 +104,26 @@ def _read_disease(
 
 def _read_signature(
     path: Path, gene_to_idx: dict[str, int], cutoff: float
-) -> tuple[list[str], dict[str, list[tuple[int, float]]], int]:
+) -> tuple[list[str], dict[str, list[tuple[int, float]]], int, dict[str, list[str]]]:
+    """Read one perturbation table.
+
+    Its key columns are ``pert_iname`` plus ``cell_id`` when the bundle keeps the
+    cell lines apart; a row is then named ``"<gene>|<cell line>"``. The returned
+    ``by_gene`` maps a perturbed gene to every row it owns, which is what the
+    label join expands over.
+    """
     values: dict[str, list[tuple[int, float]]] = {}
+    by_gene: dict[str, list[str]] = {}
     with path.open(encoding="utf-8", newline="") as handle:
         reader = csv.reader(handle, delimiter="\t")
         header = next(reader)
+        keys = 2 if len(header) > 1 and header[1] == "cell_id" else 1
         graph_columns = [
             (gene_to_idx[column], offset)
-            for offset, column in enumerate(header[1:], start=1)
+            for offset, column in enumerate(header[keys:], start=keys)
             if column in gene_to_idx
         ]
-        skipped = len(header) - 1 - len(graph_columns)
+        skipped = len(header) - keys - len(graph_columns)
         for row in reader:
             if not row:
                 continue
@@ -108,8 +132,10 @@ def _read_signature(
                 value = float(row[offset])
                 if abs(value) >= cutoff:
                     sparse.append((gene_idx, value))
-            values[row[0]] = sparse
-    return sorted(values), values, skipped
+            name = ROW_SEPARATOR.join(row[:keys])
+            values[name] = sparse
+            by_gene.setdefault(row[0], []).append(name)
+    return sorted(values), values, skipped, by_gene
 
 
 def _pack(names: list[str], values: dict[str, list[tuple[int, float]]]):
@@ -123,37 +149,45 @@ def _pack(names: list[str], values: dict[str, list[tuple[int, float]]]):
 
 
 def _read_labels(
-    path: Path, pert_names: list[str], disease_names: list[str]
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    path: Path,
+    pert_names: list[str],
+    disease_names: list[str],
+    by_gene: dict[str, list[str]],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, int]:
+    """Expand each (gene, disease) label into one sample per profile of that gene."""
     pert_to_idx = {name: idx for idx, name in enumerate(pert_names)}
     disease_to_idx = {name: idx for idx, name in enumerate(disease_names)}
     pert, disease, label = [], [], []
-    skipped = 0
+    skipped, label_rows = 0, 0
     with path.open(encoding="utf-8", newline="") as handle:
         for row in csv.DictReader(handle, delimiter="\t"):
-            if row["gene"] not in pert_to_idx or row["doid"] not in disease_to_idx:
+            rows = by_gene.get(row["gene"], ())
+            if not rows or row["doid"] not in disease_to_idx:
                 skipped += 1
                 continue
-            pert.append(pert_to_idx[row["gene"]])
-            disease.append(disease_to_idx[row["doid"]])
-            label.append(float(row["label"]))
+            label_rows += 1
+            for name in rows:
+                pert.append(pert_to_idx[name])
+                disease.append(disease_to_idx[row["doid"]])
+                label.append(float(row["label"]))
     return (
         np.asarray(pert, dtype=np.int64),
         np.asarray(disease, dtype=np.int64),
         np.asarray(label, dtype=np.float32),
         skipped,
+        label_rows,
     )
 
 
 def prepare_tr_dataset(
-    raw_dir: str | Path, output_dir: str | Path, cutoff: float = 1e-7
+    source_dir: str | Path, output_dir: str | Path, cutoff: float = 1e-7
 ) -> dict[str, Any]:
-    raw_dir, output_dir = Path(raw_dir).resolve(), Path(output_dir).resolve()
-    paths = {key: _find(raw_dir, names) for key, names in RAW_FILES.items()}
+    source_dir, output_dir = Path(source_dir).resolve(), Path(output_dir).resolve()
+    paths = {key: _find(source_dir, names) for key, names in SOURCE_FILES.items()}
     genes, relations, edge_index, edge_type = _read_graph(paths["graph"])
     gene_to_idx = {name: idx for idx, name in enumerate(genes)}
     writer = DatasetWriter(
-        output_dir, "tr", source={"raw_dir": str(raw_dir), "cutoff": cutoff}
+        output_dir, "tr", source={"source_dir": str(source_dir), "cutoff": cutoff}
     )
     writer.write_graph(edge_index, edge_type, genes, relations)
 
@@ -166,12 +200,12 @@ def prepare_tr_dataset(
     )
 
     for task_name, signature_key, label_key, channel in TASKS:
-        pert_names, pert_values, genes_skipped = _read_signature(
+        pert_names, pert_values, genes_skipped, by_gene = _read_signature(
             paths[signature_key], gene_to_idx, cutoff
         )
         writer.sparse_channel(channel, *_pack(pert_names, pert_values))
-        pert, disease, label, labels_skipped = _read_labels(
-            paths[label_key], pert_names, disease_names
+        pert, disease, label, labels_skipped, label_rows = _read_labels(
+            paths[label_key], pert_names, disease_names, by_gene
         )
         writer.write_task(
             task_name,
@@ -184,7 +218,9 @@ def prepare_tr_dataset(
             group_names=disease_names,
             source={
                 "num_perturbations": len(pert_names),
+                "num_perturbed_genes": len(by_gene),
                 "signature_genes_skipped": genes_skipped,
+                "label_rows_used": label_rows,
                 "label_rows_skipped": labels_skipped,
                 "perturbations": pert_names,
             },

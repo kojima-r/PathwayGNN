@@ -6,7 +6,7 @@ TCGA の遺伝子発現プロファイルから、診断後 n 年（n = 1〜5）
 - 前処理・学習の詳細: [`../README_data_cancer.md`](../README_data_cancer.md)
 - 再現結果: [`../docs/cancer_reproduction.md`](../docs/cancer_reproduction.md)
 
-**`data_cancer/` は Git 管理外です**（`.gitignore` 対象は `prepared/` と `artifacts/`、
+**`data_cancer/` は Git 管理外です**（`.gitignore` 対象は `prepared/`、
 それ以外の実データもサイズの都合でコミットされていません）。
 
 ---
@@ -22,9 +22,8 @@ data_cancer/
 │   ├── ensembl_gene_ids.txt          ← 別途用意が必要（§3.1）※未同梱
 │   ├── msigdb.gmt / LM22.txt         ← 別途用意が必要（§3.2）※未同梱
 │   └── ._*                           macOS の AppleDouble。無視してよい
-├── PathwayCommons13.All.hgnc.txt     963 MB  参考素材（§2.4）
+├── PathwayCommons12.All.hgnc.sif      58 MB  パスウェイグラフ（§2.3）
 ├── processed/                4.0 GB — ①の出力＝②の入力（論文コードの公開バンドル）
-├── artifacts/                638 MB — リファクタ前のレイアウト。もう読まれない
 └── prepared/                 637 MB — ②の出力（.gitignore 対象）
 ```
 
@@ -52,8 +51,8 @@ prepared/             pathwaygnn が読む汎用形式
 | `counts_gene.tsv` | recount2 が TCGA の RNA-Seq から推定した遺伝子カウント行列。58,037 遺伝子 × 11,285 サンプル。**行 ID 列を持たない** | recount2（§2.1） | 不要 |
 | `TCGA_ID.tsv` | recount2 の TCGA サンプルメタデータ（`gdc_file_id`, `gdc_cases.submitter_id`, `gdc_cases.project.project_id` を使用） | recount2（§2.1） | 不要 |
 | `mmc1.csv` | TCGA Pan-Cancer Clinical Data Resource（TCGA-CDR）。11,160 症例の生存情報 | Liu et al. 2018（§2.2） | 不要 |
-| グラフ（SIF） | パスウェイグラフ。既定では `data_tr/raw/PathwayCommons12.All.hgnc.sif` を使う | Pathway Commons v12（§2.3） | 不要 |
-| HGNC 対応表 | シンボル → 数値 HGNC ID。既定では `data_cdr/raw/EnsemblToHGNC.tsv` | HGNC（§2.5） | 不要 |
+| `PathwayCommons12.All.hgnc.sif` | パスウェイグラフ（3列 SIF、関係13種）。1,884,849 行 | Pathway Commons v12（§2.3） | 不要 |
+| HGNC 対応表 | シンボル → 数値 HGNC ID。既定では `data_cdr/raw/EnsemblToHGNC.tsv` | HGNC（§2.4） | 不要 |
 | `ensembl_gene_ids.txt` | `counts_gene.tsv` の 58,037 行に対応する遺伝子 ID の並び | recount2 の遺伝子アノテーション（§3.1） | 不要 |
 | `msigdb.gmt`, `LM22.txt` | がん関連遺伝子の母集合 | MSigDB / CIBERSORT（§3.2） | **必要** |
 
@@ -99,28 +98,36 @@ curl -L -o TCGA-CDR-SupplementalTableS1.xlsx \
 
 - 一覧ページ: <https://gdc.cancer.gov/about-data/publications/pancanatlas>
 
-### 2.3 グラフ: Pathway Commons v12
+### 2.3 グラフ: `PathwayCommons12.All.hgnc.sif`
 
-`configs/cancer/build_processed.yaml` の既定値は `data_tr/raw/PathwayCommons12.All.hgnc.sif`
-（**Git 管理下**）なので、通常は追加ダウンロード不要です。入手手順は
-[`../data_tr/README.md` §2.1](../data_tr/README.md) を参照してください。
+Pathway Commons Release 12 の「全ソース統合・HGNC シンボル・3列 SIF」（1,884,849 行、
+関係13種）。`configs/cancer/build_processed.yaml` の `graph_sif` がこれを指します。
+
+```bash
+curl -o data_cancer/PathwayCommons12.All.hgnc.sif.gz \
+  https://download.baderlab.org/PathwayCommons/PC2/v12/PathwayCommons12.All.hgnc.sif.gz
+gunzip data_cancer/PathwayCommons12.All.hgnc.sif.gz
+```
+
+- アーカイブ一覧: <https://download.baderlab.org/PathwayCommons/PC2/v12/>
+- 列レイアウトの詳細: [`../data_tr/README.md` §2.1](../data_tr/README.md)
+
+**`data_tr/raw/PathwayCommons12.All.hgnc.sif` と同一内容です**（SHA-256 一致:
+`b6cbb006…2e6bc1`）。そちらは Git 管理下にあるので、この複製が無い環境では
+`graph_sif` をそちらに向ければ再ダウンロード不要です。
 
 論文はグラフを「Pathway Commons（関係13種）」と記述しており、公開バンドルのグラフは
 **PathwayCommons 12 と一致することを確認済み**です（ノード 30,918 / 関係 13 /
 有向エッジ 3,673,654 の3点が一致）。
 
-### 2.4 `PathwayCommons13.All.hgnc.txt`（参考素材）
+> 以前ここに置かれていた `PathwayCommons13.All.hgnc.txt`（v13 の7列拡張 SIF、963 MB）は
+> **削除し、実際に使う v12 の SIF に置き換えました**。参考素材でパイプラインは読んで
+> いませんでした。なお **v13 は現在のミラーから消えており再取得できません**
+> （<https://download.baderlab.org/PathwayCommons/PC2/> にあるのは v2〜v12 と v14）。
+> 新しい版が必要なら v14 が後継ですが、ノード・関係・エッジ数が変わるため
+> 事前学習からやり直しになります。
 
-Pathway Commons v13 の拡張 SIF（7列: `PARTICIPANT_A`, `INTERACTION_TYPE`,
-`PARTICIPANT_B`, `INTERACTION_DATA_SOURCE`, `INTERACTION_PUBMED_ID`, `PATHWAY_NAMES`,
-`MEDIATOR_IDS`）です。**パイプラインは使いません**（§2.3 の通り実際に使うのは v12）。
-
-なお **v13 は現在のミラーから消えており再取得できません**
-（<https://download.baderlab.org/PathwayCommons/PC2/> にあるのは v2〜v12 と v14）。
-新しい版が必要なら v14 の `PathwayCommons14.All.hgnc.txt.gz` が後継ですが、
-ノード・関係・エッジ数が変わるため事前学習からやり直しになります。
-
-### 2.5 HGNC 対応表
+### 2.4 HGNC 対応表
 
 既定では `data_cdr/raw/EnsemblToHGNC.tsv`（`data_cdr` の取得スクリプトが生成）を
 使いますが、`Approved symbol` と `Ensembl gene ID` を持つ HGNC の complete-set
@@ -226,5 +233,4 @@ memmap 行列へ流し込み、年ごとに `prepared/tasks/<n>year/` を作り�
 ①で作り直したバンドルを使う場合は、年別サンプル数が数件ずれるため
 `configs/cancer/prepare.yaml` の `strict_sample_counts` を `false` にしてください。
 
-`artifacts/` はリファクタ前のレイアウトで、もう読まれません。`prepared/` を
-再生成したあとは削除して構いません。
+> リファクタ前のレイアウトだった `artifacts/` は削除済みです（`prepared/` が後継）。

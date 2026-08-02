@@ -2,10 +2,10 @@
 
 ## What this report covers
 
-Dataset **tr** at `/data1/kojima/PathwayGNN/PathwayGNN/data_tr/raw`, prepared
-into `data_tr/prepared`: 30,918 graph nodes, 3,673,654 directed
+Dataset **tr** at `/data1/kojima/PathwayGNN/PathwayGNN/data_tr/processed`, prepared
+into `data_tr/prepared`: 30,895 graph nodes, 3,671,958 directed
 edges, 13 relation types, tasks kd_inh, oe_act. Run status: 4 cross-validation conditions, 2 holdout runs, 2 baseline runs, 2 attribution runs.
-Graph pre-training: 100 epochs, final DistMult loss 0.9473, final pairwise accuracy 0.8818.
+Graph pre-training: 100 epochs, final DistMult loss 0.9667, final pairwise accuracy 0.8669.
 
 Every number below comes from artifacts under `outputs/tr/`, and every table is also written as TSV
 under `outputs/tr/report/`. Cross-validation and the graph-free baselines use the same stratified 5-fold
@@ -16,8 +16,8 @@ attribution runs on fold 0 of the graph variant, and holdout fine-tuning uses it
 
 | task | samples | positive | positive_ratio | perturbations | diseases_used | diseases_total | mean_genes_perturbation | mean_genes_disease | signature_genes_skipped | label_rows_skipped |
 |---|---|---|---|---|---|---|---|---|---|---|
-| kd_inh | 6944 | 567 | 0.0817 | 4345 | 31 | 235 | 958 | 1017 | 19 | 224 |
-| oe_act | 450 | 37 | 0.0822 | 3114 | 15 | 235 | 958 | 1017 | 19 | 0 |
+| kd_inh | 61101 | 5013 | 0.0820 | 33817 | 31 | 177 | 975 | 994 | 2 | 255 |
+| oe_act | 3465 | 294 | 0.0848 | 20131 | 15 | 177 | 975 | 994 | 2 | 0 |
 
 `diseases_used` counts the diseases that actually appear in a task's labels, out of
 `diseases_total` in the shared disease channel. The `mean_genes_*` columns are the mean number of
@@ -27,39 +27,39 @@ non-zero genes per row of each channel after the 1e-7 cutoff.
 
 | task | variant | uses_graph | mean_auc | std_auc | mean_accuracy | mean_precision | mean_recall | mean_f1 | min_fold_auc | max_fold_auc | pooled_auc | folds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| kd_inh | mlp | False | 0.5000 | 0.0334 | 0.9183 | 0.0000 | 0.0000 | 0.0000 | 0.4353 | 0.5295 | 0.5127 | 5 |
-| kd_inh | gnn_mlp | True | 0.5059 | 0.0305 | 0.9183 | 0.0000 | 0.0000 | 0.0000 | 0.4708 | 0.5469 | 0.5116 | 5 |
-| oe_act | mlp | False | 0.7045 | 0.1090 | 0.9178 | 0.0000 | 0.0000 | 0.0000 | 0.5577 | 0.8689 | 0.6886 | 5 |
-| oe_act | gnn_mlp | True | 0.6986 | 0.1421 | 0.9133 | 0.0667 | 0.0571 | 0.0615 | 0.4733 | 0.8659 | 0.6756 | 5 |
+| kd_inh | mlp | False | 0.5175 | 0.0351 | 0.3993 | 0.0759 | 0.6399 | 0.1236 | 0.4994 | 0.5877 | 0.5171 | 5 |
+| kd_inh | gnn_mlp | True | 0.5000 | 0.0000 | 0.4164 | 0.0492 | 0.6000 | 0.0910 | 0.5000 | 0.5000 | 0.5001 | 5 |
+| oe_act | mlp | False | 0.7046 | 0.0419 | 0.7547 | 0.1925 | 0.5850 | 0.2890 | 0.6385 | 0.7652 | 0.6983 | 5 |
+| oe_act | gnn_mlp | True | 0.6885 | 0.0916 | 0.7244 | 0.2786 | 0.5966 | 0.3478 | 0.5236 | 0.8034 | 0.7116 | 5 |
 
 `pooled_auc` is computed once over the concatenated held-out predictions of all folds, which is why
 it can sit outside the min/max of the per-fold values. The `mean_accuracy`/`precision`/`recall`/`f1`
 columns score the same folds at a fixed **0.5 decision threshold**; ROC-AUC is threshold-free, so a
 condition can rank well and still sit at a poor operating point (or the reverse).
 
-`cv` trains with an unweighted BCE loss — unlike `finetune`, which applies `pos_weight` — so on imbalanced labels the 0.5 operating point collapses onto the majority class. That is what happens here: 3 of 4 conditions (kd_inh/mlp, kd_inh/gnn_mlp, oe_act/mlp) score F1 exactly 0 at 0.5 while their ROC-AUC is not at chance. The ranking carries signal; the default threshold does not expose it.
+`cv` weights the positive class by `pos_weight` (10.75–11.19 across folds, i.e. negatives/positives of each fold's training split), which is the rule `finetune` uses, so both protocols optimise the same loss; the 0.5 operating point is therefore comparable between the two tables.
 
 Effect of the graph encoder:
 
 | task | baseline | baseline_auc | graph_variant | graph_auc | delta |
 |---|---|---|---|---|---|
-| kd_inh | mlp | 0.5000 | gnn_mlp | 0.5059 | 0.0059 |
-| oe_act | mlp | 0.7045 | gnn_mlp | 0.6986 | -0.0059 |
+| kd_inh | mlp | 0.5175 | gnn_mlp | 0.5000 | -0.0175 |
+| oe_act | mlp | 0.7046 | gnn_mlp | 0.6885 | -0.0161 |
 
 ## Graph-free baselines (`pathwaygnn benchmark`)
 
 | task | model | auc | accuracy | precision | recall | f1 |
 |---|---|---|---|---|---|---|
-| kd_inh | logistic_regression | 0.6545 | 0.7127 | 0.1626 | 0.6050 | 0.2562 |
-| kd_inh | random_forest | 0.7520 | 0.9042 | 0.2851 | 0.1111 | 0.1590 |
-| kd_inh | xgboost | 0.7402 | 0.9165 | 0.4339 | 0.0529 | 0.0934 |
-| kd_inh | mlp (pathwaygnn cv) | 0.5000 | 0.9183 | 0.0000 | 0.0000 | 0.0000 |
-| kd_inh | gnn_mlp (pathwaygnn cv) | 0.5059 | 0.9183 | 0.0000 | 0.0000 | 0.0000 |
-| oe_act | logistic_regression | 0.4541 | 0.7400 | 0.0474 | 0.1036 | 0.0648 |
-| oe_act | random_forest | 0.6868 | 0.8733 | 0.2733 | 0.3321 | 0.2849 |
-| oe_act | xgboost | 0.4663 | 0.8956 | 0.0000 | 0.0000 | 0.0000 |
-| oe_act | mlp (pathwaygnn cv) | 0.7045 | 0.9178 | 0.0000 | 0.0000 | 0.0000 |
-| oe_act | gnn_mlp (pathwaygnn cv) | 0.6986 | 0.9133 | 0.0667 | 0.0571 | 0.0615 |
+| kd_inh | logistic_regression | 0.7550 | 0.7049 | 0.1714 | 0.6774 | 0.2736 |
+| kd_inh | random_forest | 0.8086 | 0.9147 | 0.4260 | 0.1145 | 0.1803 |
+| kd_inh | xgboost | 0.8025 | 0.9186 | 0.6611 | 0.0164 | 0.0319 |
+| kd_inh | mlp (pathwaygnn cv) | 0.5175 | 0.3993 | 0.0759 | 0.6399 | 0.1236 |
+| kd_inh | gnn_mlp (pathwaygnn cv) | 0.5000 | 0.4164 | 0.0492 | 0.6000 | 0.0910 |
+| oe_act | logistic_regression | 0.4342 | 0.7417 | 0.0831 | 0.2041 | 0.1181 |
+| oe_act | random_forest | 0.8032 | 0.9140 | 0.4945 | 0.3606 | 0.4164 |
+| oe_act | xgboost | 0.7197 | 0.9039 | 0.1477 | 0.0341 | 0.0553 |
+| oe_act | mlp (pathwaygnn cv) | 0.7046 | 0.7547 | 0.1925 | 0.5850 | 0.2890 |
+| oe_act | gnn_mlp (pathwaygnn cv) | 0.6885 | 0.7244 | 0.2786 | 0.5966 | 0.3478 |
 
 The baselines consume exactly the same features as the GNN — the sparse perturbation and disease
 signatures — without the pathway graph. All five metrics are on the same footing: both sides are
@@ -69,8 +69,8 @@ the mean over the same five folds, and both threshold at 0.5.
 
 | task | train | valid | test | epochs_run | best_epoch | best_valid_auc | test_auc | test_accuracy | test_precision | test_recall | test_f1 | test_predicted_positive_ratio |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| kd_inh | 4859 | 1041 | 1044 | 23 | 3 | 0.5848 | 0.5940 | 0.0824 | 0.0824 | 1.0000 | 0.1522 | 1.0000 |
-| oe_act | 314 | 66 | 70 | 30 | 10 | 0.9443 | 0.7392 | 0.8714 | 0.4000 | 0.5714 | 0.4706 | 0.1429 |
+| kd_inh | 42770 | 9164 | 9167 | 22 | 2 | 0.6128 | 0.5869 | 0.4498 | 0.0996 | 0.7092 | 0.1747 | 0.5846 |
+| oe_act | 2424 | 519 | 522 | 45 | 25 | 0.6999 | 0.6451 | 0.9176 | 0.5385 | 0.3111 | 0.3944 | 0.0498 |
 
 This protocol is a single stratified 70/15/15 split with early stopping on validation ROC-AUC and
 `pos_weight` from the training class ratio, so its numbers are not directly comparable with the
@@ -85,36 +85,36 @@ Top 15 diseases per task by held-out sample count:
 
 | task | disease | samples | positives | auc_mlp | auc_gnn_mlp |
 |---|---|---|---|---|---|
-| kd_inh | DOID:0050156 | 224 | 16 | 0.4669 | 0.5925 |
-| kd_inh | DOID:0050589 | 224 | 20 | 0.5271 | 0.4162 |
-| kd_inh | DOID:1040 | 224 | 4 | 0.4347 | 0.5591 |
-| kd_inh | DOID:10534 | 224 | 24 | 0.4893 | 0.5200 |
-| kd_inh | DOID:10652 | 224 | 6 | 0.4063 | 0.5356 |
-| kd_inh | DOID:12449 | 224 | 6 | 0.6036 | 0.5986 |
-| kd_inh | DOID:1380 | 224 | 1 | 0.0493 | 0.4888 |
-| kd_inh | DOID:13810 | 224 | 7 | 0.5270 | 0.4605 |
-| kd_inh | DOID:14330 | 224 | 7 | 0.5734 | 0.5510 |
-| kd_inh | DOID:1612 | 224 | 63 | 0.4859 | 0.4634 |
-| kd_inh | DOID:1793 | 224 | 31 | 0.4051 | 0.4307 |
-| kd_inh | DOID:1883 | 224 | 1 | 0.6211 | 0.6906 |
-| kd_inh | DOID:1909 | 224 | 16 | 0.4141 | 0.5717 |
-| kd_inh | DOID:2394 | 224 | 25 | 0.5398 | 0.5314 |
-| kd_inh | DOID:2841 | 224 | 10 | 0.4516 | 0.4033 |
-| oe_act | DOID:0050589 | 30 | 1 | 0.8966 | 0.7241 |
-| oe_act | DOID:1206 | 30 | 1 | 0.0345 | 0.0345 |
-| oe_act | DOID:14330 | 30 | 2 | 0.2321 | 0.4464 |
-| oe_act | DOID:1612 | 30 | 6 | 0.2986 | 0.2153 |
-| oe_act | DOID:2394 | 30 | 1 | 0.6207 | 0.8621 |
-| oe_act | DOID:3265 | 30 | 1 | 0.0345 | 0.6552 |
-| oe_act | DOID:4450 | 30 | 3 | 0.4321 | 0.3827 |
-| oe_act | DOID:676 | 30 | 1 | 0.8621 | 0.1379 |
-| oe_act | DOID:7148 | 30 | 1 | 0.1034 | 0.1379 |
-| oe_act | DOID:8552 | 30 | 1 | 0.3793 | 0.3103 |
-| oe_act | DOID:9119 | 30 | 1 | 0.5862 | 0.7241 |
-| oe_act | DOID:9256 | 30 | 1 | 0.0690 | 0.0690 |
-| oe_act | DOID:9352 | 30 | 15 | 0.4400 | 0.3511 |
-| oe_act | DOID:9538 | 30 | 1 | 0.6897 | 0.1034 |
-| oe_act | DOID:9744 | 30 | 1 | 0.4828 | 0.3103 |
+| kd_inh | DOID:0050156 | 1971 | 131 | 0.4840 | 0.4970 |
+| kd_inh | DOID:0050589 | 1971 | 166 | 0.5176 | 0.5285 |
+| kd_inh | DOID:1040 | 1971 | 41 | 0.4776 | 0.5122 |
+| kd_inh | DOID:10534 | 1971 | 211 | 0.5012 | 0.5120 |
+| kd_inh | DOID:10652 | 1971 | 47 | 0.4666 | 0.4403 |
+| kd_inh | DOID:12449 | 1971 | 50 | 0.5049 | 0.4764 |
+| kd_inh | DOID:1380 | 1971 | 8 | 0.5549 | 0.5966 |
+| kd_inh | DOID:13810 | 1971 | 65 | 0.4503 | 0.5099 |
+| kd_inh | DOID:14330 | 1971 | 55 | 0.5324 | 0.5044 |
+| kd_inh | DOID:1612 | 1971 | 581 | 0.5124 | 0.5107 |
+| kd_inh | DOID:1793 | 1971 | 280 | 0.5438 | 0.4834 |
+| kd_inh | DOID:1883 | 1971 | 8 | 0.5038 | 0.5868 |
+| kd_inh | DOID:1909 | 1971 | 163 | 0.4819 | 0.4875 |
+| kd_inh | DOID:2394 | 1971 | 222 | 0.5355 | 0.5077 |
+| kd_inh | DOID:2841 | 1971 | 85 | 0.4682 | 0.4858 |
+| oe_act | DOID:0050589 | 231 | 9 | 0.5100 | 0.4655 |
+| oe_act | DOID:1206 | 231 | 10 | 0.6552 | 0.4921 |
+| oe_act | DOID:14330 | 231 | 18 | 0.4038 | 0.3911 |
+| oe_act | DOID:1612 | 231 | 46 | 0.4528 | 0.4663 |
+| oe_act | DOID:2394 | 231 | 9 | 0.4645 | 0.4389 |
+| oe_act | DOID:3265 | 231 | 9 | 0.7465 | 0.5631 |
+| oe_act | DOID:4450 | 231 | 27 | 0.5684 | 0.4986 |
+| oe_act | DOID:676 | 231 | 9 | 0.6141 | 0.5891 |
+| oe_act | DOID:7148 | 231 | 9 | 0.4189 | 0.6044 |
+| oe_act | DOID:8552 | 231 | 9 | 0.7543 | 0.5916 |
+| oe_act | DOID:9119 | 231 | 8 | 0.4857 | 0.5555 |
+| oe_act | DOID:9256 | 231 | 10 | 0.2566 | 0.5172 |
+| oe_act | DOID:9352 | 231 | 103 | 0.4758 | 0.4675 |
+| oe_act | DOID:9538 | 231 | 9 | 0.4419 | 0.4800 |
+| oe_act | DOID:9744 | 231 | 9 | 0.4464 | 0.5020 |
 
 The full table for every disease is in `outputs/tr/report/per_disease_auc.tsv`.
 
@@ -122,84 +122,84 @@ The full table for every disease is in `outputs/tr/report/per_disease_auc.tsv`.
 
 | task | rank | node | ig_l2 | degree |
 |---|---|---|---|---|
-| kd_inh | 1 | CHEBI:4667 | 0.0130 | 28040 |
-| kd_inh | 2 | CHEBI:9925 | 0.0130 | 28040 |
-| kd_inh | 3 | CHEBI:39867 | 0.0112 | 28094 |
-| kd_inh | 4 | CHEBI:60654 | 0.0101 | 28040 |
-| kd_inh | 5 | CHEBI:2504 | 0.0093 | 19434 |
-| kd_inh | 6 | CHEBI:33216 | 0.0083 | 9618 |
-| kd_inh | 7 | CHEBI:4031 | 0.0083 | 16040 |
-| kd_inh | 8 | CHEBI:29678 | 0.0079 | 9428 |
-| kd_inh | 9 | CHEBI:31522 | 0.0078 | 13546 |
-| kd_inh | 10 | CHEBI:46195 | 0.0077 | 14174 |
-| kd_inh | 11 | CHEBI:64816 | 0.0071 | 13546 |
-| kd_inh | 12 | CHEBI:28748 | 0.0071 | 13574 |
-| kd_inh | 13 | CHEBI:46024 | 0.0069 | 9846 |
-| kd_inh | 14 | SP1 | 0.0067 | 8120 |
-| kd_inh | 15 | CHEBI:29865 | 0.0066 | 13518 |
-| oe_act | 1 | CHEBI:39867 | 0.0235 | 28094 |
-| oe_act | 2 | CHEBI:4667 | 0.0212 | 28040 |
-| oe_act | 3 | CHEBI:60654 | 0.0195 | 28040 |
-| oe_act | 4 | CHEBI:9925 | 0.0174 | 28040 |
-| oe_act | 5 | CHEBI:2504 | 0.0158 | 19434 |
-| oe_act | 6 | CHEBI:64816 | 0.0130 | 13546 |
-| oe_act | 7 | CHEBI:4031 | 0.0127 | 16040 |
-| oe_act | 8 | CHEBI:33364 | 0.0123 | 13042 |
-| oe_act | 9 | CHEBI:29678 | 0.0118 | 9428 |
-| oe_act | 10 | CHEBI:23414 | 0.0117 | 11862 |
-| oe_act | 11 | CHEBI:46195 | 0.0115 | 14174 |
-| oe_act | 12 | CHEBI:16469 | 0.0113 | 11488 |
-| oe_act | 13 | CHEBI:31440 | 0.0112 | 11862 |
-| oe_act | 14 | CHEBI:46024 | 0.0106 | 9846 |
-| oe_act | 15 | MYC | 0.0102 | 10084 |
+| kd_inh | 1 | CHEBI:60654 | 0.0095 | 28022 |
+| kd_inh | 2 | CHEBI:4667 | 0.0085 | 28022 |
+| kd_inh | 3 | CHEBI:9925 | 0.0085 | 28022 |
+| kd_inh | 4 | CHEBI:39867 | 0.0074 | 28076 |
+| kd_inh | 5 | CHEBI:2504 | 0.0059 | 19418 |
+| kd_inh | 6 | CHEBI:33364 | 0.0056 | 13036 |
+| kd_inh | 7 | MYC | 0.0055 | 10080 |
+| kd_inh | 8 | ESR1 | 0.0055 | 10072 |
+| kd_inh | 9 | CHEBI:64816 | 0.0053 | 13544 |
+| kd_inh | 10 | CHEBI:4031 | 0.0050 | 16036 |
+| kd_inh | 11 | CHEBI:23965 | 0.0050 | 11310 |
+| kd_inh | 12 | CHEBI:28748 | 0.0050 | 13572 |
+| kd_inh | 13 | JUN | 0.0050 | 8654 |
+| kd_inh | 14 | CHEBI:23414 | 0.0048 | 11862 |
+| kd_inh | 15 | PTK2 | 0.0048 | 5418 |
+| oe_act | 1 | CHEBI:4667 | 0.0117 | 28022 |
+| oe_act | 2 | CHEBI:39867 | 0.0107 | 28076 |
+| oe_act | 3 | CHEBI:60654 | 0.0102 | 28022 |
+| oe_act | 4 | CHEBI:9925 | 0.0098 | 28022 |
+| oe_act | 5 | JUN | 0.0070 | 8654 |
+| oe_act | 6 | CHEBI:28748 | 0.0066 | 13572 |
+| oe_act | 7 | ESR1 | 0.0066 | 10072 |
+| oe_act | 8 | CHEBI:64816 | 0.0062 | 13544 |
+| oe_act | 9 | CHEBI:2504 | 0.0062 | 19418 |
+| oe_act | 10 | CHEBI:33364 | 0.0062 | 13036 |
+| oe_act | 11 | CHEBI:23965 | 0.0060 | 11310 |
+| oe_act | 12 | CHEBI:4031 | 0.0059 | 16036 |
+| oe_act | 13 | CHEBI:29678 | 0.0057 | 9424 |
+| oe_act | 14 | CHEBI:16469 | 0.0057 | 11482 |
+| oe_act | 15 | CHEBI:27899 | 0.0056 | 13032 |
 
 Top 10 attributed genes per channel:
 
 | task | channel | rank | node | signed_ig |
 |---|---|---|---|---|
-| kd_inh | perturbation | 1 | SATB1 | -0.0001 |
-| kd_inh | perturbation | 2 | MCOLN1 | -0.0000 |
-| kd_inh | perturbation | 3 | MIF | 0.0000 |
-| kd_inh | perturbation | 4 | PCNA | 0.0000 |
-| kd_inh | perturbation | 5 | CSRP1 | 0.0000 |
-| kd_inh | perturbation | 6 | ST3GAL5 | -0.0000 |
-| kd_inh | perturbation | 7 | CHMP4A | 0.0000 |
-| kd_inh | perturbation | 8 | SPP1 | -0.0000 |
-| kd_inh | perturbation | 9 | ABCC5 | -0.0000 |
-| kd_inh | perturbation | 10 | TIMM9 | 0.0000 |
-| kd_inh | disease | 1 | AQP4 | -0.0000 |
-| kd_inh | disease | 2 | MYOM2 | -0.0000 |
-| kd_inh | disease | 3 | ZNF766 | -0.0000 |
-| kd_inh | disease | 4 | RPS16 | 0.0000 |
-| kd_inh | disease | 5 | SLC16A12 | -0.0000 |
-| kd_inh | disease | 6 | FMO4 | -0.0000 |
-| kd_inh | disease | 7 | FMO2 | -0.0000 |
-| kd_inh | disease | 8 | CCL18 | -0.0000 |
-| kd_inh | disease | 9 | CCL2 | -0.0000 |
-| kd_inh | disease | 10 | PROM1 | 0.0000 |
-| oe_act | perturbation | 1 | POLR2I | 0.0000 |
+| kd_inh | perturbation | 1 | CAST | -0.0001 |
+| kd_inh | perturbation | 2 | OXA1L | -0.0001 |
+| kd_inh | perturbation | 3 | CSRP1 | -0.0001 |
+| kd_inh | perturbation | 4 | ABHD4 | -0.0001 |
+| kd_inh | perturbation | 5 | GRN | -0.0001 |
+| kd_inh | perturbation | 6 | PLCB3 | -0.0001 |
+| kd_inh | perturbation | 7 | C2CD2 | -0.0001 |
+| kd_inh | perturbation | 8 | GTPBP8 | -0.0001 |
+| kd_inh | perturbation | 9 | TIMM9 | -0.0001 |
+| kd_inh | perturbation | 10 | CALU | -0.0001 |
+| kd_inh | disease | 1 | MYOM2 | -0.0000 |
+| kd_inh | disease | 2 | RPS4Y1 | -0.0000 |
+| kd_inh | disease | 3 | DEFA1B | -0.0000 |
+| kd_inh | disease | 4 | BPIFB1 | -0.0000 |
+| kd_inh | disease | 5 | MSMB | -0.0000 |
+| kd_inh | disease | 6 | H1-4 | -0.0000 |
+| kd_inh | disease | 7 | CLCA2 | -0.0000 |
+| kd_inh | disease | 8 | HBA1 | 0.0000 |
+| kd_inh | disease | 9 | CLC | -0.0000 |
+| kd_inh | disease | 10 | SLPI | -0.0000 |
+| oe_act | perturbation | 1 | MAP7 | -0.0000 |
 | oe_act | perturbation | 2 | PLCB3 | -0.0000 |
-| oe_act | perturbation | 3 | PPARG | -0.0000 |
-| oe_act | perturbation | 4 | PSMB8 | -0.0000 |
-| oe_act | perturbation | 5 | MCOLN1 | 0.0000 |
-| oe_act | perturbation | 6 | OXA1L | 0.0000 |
-| oe_act | perturbation | 7 | SNX11 | -0.0000 |
-| oe_act | perturbation | 8 | HMOX1 | -0.0000 |
-| oe_act | perturbation | 9 | HSPA8 | 0.0000 |
-| oe_act | perturbation | 10 | CBR3 | -0.0000 |
+| oe_act | perturbation | 3 | SNX11 | -0.0000 |
+| oe_act | perturbation | 4 | SESN1 | -0.0000 |
+| oe_act | perturbation | 5 | C2CD2 | -0.0000 |
+| oe_act | perturbation | 6 | MCOLN1 | -0.0000 |
+| oe_act | perturbation | 7 | HSPA1A | -0.0000 |
+| oe_act | perturbation | 8 | PTPRC | -0.0000 |
+| oe_act | perturbation | 9 | DNAJB1 | -0.0000 |
+| oe_act | perturbation | 10 | ME2 | -0.0000 |
 | oe_act | disease | 1 | MYOM2 | 0.0000 |
-| oe_act | disease | 2 | DDX17 | 0.0000 |
-| oe_act | disease | 3 | LY6E | -0.0000 |
-| oe_act | disease | 4 | CCL23 | -0.0000 |
-| oe_act | disease | 5 | IGFBP3 | 0.0000 |
-| oe_act | disease | 6 | ORM2 | -0.0000 |
-| oe_act | disease | 7 | NEBL | 0.0000 |
-| oe_act | disease | 8 | YBX3 | 0.0000 |
-| oe_act | disease | 9 | HBA2 | -0.0000 |
-| oe_act | disease | 10 | FOLR3 | -0.0000 |
+| oe_act | disease | 2 | IGHA2 | 0.0000 |
+| oe_act | disease | 3 | RPS18 | -0.0000 |
+| oe_act | disease | 4 | IFITM3 | -0.0000 |
+| oe_act | disease | 5 | TMSB10 | -0.0000 |
+| oe_act | disease | 6 | OLFM4 | -0.0000 |
+| oe_act | disease | 7 | CEACAM6 | -0.0000 |
+| oe_act | disease | 8 | IFITM2 | -0.0000 |
+| oe_act | disease | 9 | IFITM1 | -0.0000 |
+| oe_act | disease | 10 | DDX17 | 0.0000 |
 
 Degree/attribution Pearson correlation:
-kd_inh r=0.823 (50 samples, 50 steps), oe_act r=0.899 (50 samples, 50 steps).
+kd_inh r=0.766 (50 samples, 50 steps), oe_act r=0.789 (50 samples, 50 steps).
 
 Attribution mass concentrates on the highest-degree nodes, and the top of the ranking is dominated
 by PathwayCommons chemical entities (`CHEBI:*`) rather than genes — the same degree-driven pattern
@@ -253,8 +253,8 @@ architecture works on this task. Read them with three caveats:
 
 * **kd_inh sits at chance** for both variants while the tree baselines reach far higher ROC-AUC on
   the identical folds. On this task the graph pipeline extracts less than plain feature models do.
-* **oe_act is small** (450 samples,
-  37 positive), so its fold spread is wide and the
+* **oe_act is small** (3465 samples,
+  294 positive), so its fold spread is wide and the
   mean over five folds is a weak estimate.
 * **One pre-training run** feeds every downstream number; no seed sweep was performed, and the
   encoder is frozen by default (`end_to_end: false` in `configs/tr/cv.yaml`).

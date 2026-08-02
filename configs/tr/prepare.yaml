@@ -1,4 +1,7 @@
 # pathwaygnn-data tr-prepare
-raw_dir: data_tr/raw
+#
+# Reads the bundle built by `tr-build-processed` (raw sources -> processed).
+# `raw_dir` is still accepted as an alias for `source_dir`.
+source_dir: data_tr/processed
 output_dir: data_tr/prepared
 cutoff: 1.0e-7

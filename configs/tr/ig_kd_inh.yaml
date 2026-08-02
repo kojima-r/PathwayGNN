@@ -17,5 +17,5 @@ steps: 50
 # backward per integration step, so start small.
 max_samples: 50
 top_k: 1500
-# 235 diseases would mean 235 ranking files; enable deliberately.
+# 177 diseases would mean 177 ranking files; enable deliberately.
 per_group_rankings: false

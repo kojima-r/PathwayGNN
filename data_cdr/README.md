@@ -6,7 +6,7 @@
 - 前処理・学習の詳細: [`../README_data_cdr.md`](../README_data_cdr.md)
 - 実行結果: [`../docs/cdr_report.md`](../docs/cdr_report.md)
 
-**`data_cdr/raw/` と `data_cdr/processed/` は Git 管理外です**（合計 12 GB、かつ
+**`data_cdr/raw/` と `data_cdr/processed/` は Git 管理外です**（合計 11 GB、かつ
 COSMIC Cancer Gene Census が登録済みユーザーの手動ダウンロードを要求するため）。
 新規クローンでは §4 の手順で作る必要があります。
 
@@ -16,7 +16,7 @@ COSMIC Cancer Gene Census が登録済みユーザーの手動ダウンロード
 
 ```text
 data_cdr/
-├── raw/                      2.4 GB — 上流ステージの入力
+├── raw/                      1.6 GB — 上流ステージの入力
 │   ├── sources/              取得した公開ファイルの原本（監査用に保持）
 │   ├── CosmicCLP_MutantExport.tsv    312 MB
 │   ├── v17_fitted_dose_response.csv   41 MB
@@ -26,7 +26,7 @@ data_cdr/
 │   ├── cancer_gene_census.csv        5.3 KB
 │   ├── reactome_rev2.graph.tsv       7.0 MB
 │   ├── EnsemblToHGNC.tsv             1.5 MB
-│   ├── hg38.2bit / hg19.2bit         835 MB / 816 MB
+│   ├── hg38.2bit                     835 MB
 │   ├── fingerprints.csv              1.4 MB（生成物）
 │   ├── maf.csv                       130 MB（生成物・キャッシュ）
 │   └── SHA256SUMS
@@ -115,8 +115,10 @@ CGC からは `GENE_SYMBOL` 列しか読まず、v104 の GRCh37 版と GRCh38 �
 hg38 でなければなりません（`configs/cdr/upstream.json` の `HG2BIT: raw/hg38.2bit`）。
 検証結果は、サンプリングした SNV 20,000 件が hg38 と 100% 一致、hg19 では 24.5%
 （＝偶然一致の水準）で、約 17k の座標が hg19 の染色体長を超えます。
-`raw/hg19.2bit`（<https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/hg19.2bit>）は
-この検証の痕跡として残っているだけで、パイプラインは使いません。
+
+> 検証に使った `raw/hg19.2bit`（<https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/hg19.2bit>、
+> 816 MB）は削除済みです。パイプラインは読まないので再取得は不要で、
+> `download_raw_data.py` も hg38 しか取得しません。
 
 ---
 
@@ -159,7 +161,7 @@ bash scripts/cdr/prepare.sh
 bash scripts/cdr/reproduce.sh
 ```
 
-所要時間の目安: ①は回線次第（1.7 GB のダウンロード、`hg38.2bit` が支配的）、
+所要時間の目安: ①は回線次第（約 1.2 GB のダウンロード、`hg38.2bit` が支配的）、
 ②は変異シグネチャの算出が重く数時間、③は約4分、④は 3 GPU で約1時間。
 
 ①は最後に `raw/SHA256SUMS` を書き出します。検証はこちら:

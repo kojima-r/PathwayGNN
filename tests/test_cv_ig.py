@@ -53,6 +53,7 @@ def test_cv_grid_and_ig(tmp_path: Path, dataset: GraphDataset, pretrained: Path)
     metrics = json.loads((fold / "metrics.json").read_text())
     # seed = seed + seed_offset * 1000 + fold + seed_index * 100
     assert metrics["seed"] == 5 + 7 * 1000 + 0 + 3 * 100
+    assert metrics["pos_weight"] is None  # unweighted BCE unless asked for
     assert len(metrics["history"]) == 2
     assert set(metrics["per_group_auc"]) == {"g0", "g1", "g2"}
     predictions = np.load(fold / "predictions.npz")
@@ -133,6 +134,34 @@ def test_ig_without_graph_skips_node_attribution(
     assert not (tmp_path / "ig_free" / "top_graph_nodes.tsv").exists()
     arrays = np.load(tmp_path / "ig_free" / "attributions.npz")
     assert "graph_score" not in arrays and "channel_signature" in arrays
+
+
+def test_cv_pos_weight_matches_the_finetune_rule(
+    tmp_path: Path, dataset: GraphDataset, pretrained: Path
+) -> None:
+    """`pos_weight: auto` is negatives/positives of the fold's training split."""
+    config = _cv_config(dataset, pretrained, tmp_path / "cv")
+    config["training"]["pos_weight"] = "auto"
+    config["variants"] = [VARIANTS[0]]
+    run_cv(config)
+
+    fold = tmp_path / "cv" / "main" / "mlp" / "fold_0"
+    metrics = json.loads((fold / "metrics.json").read_text())
+    # Fold 0 trains on the samples fold 1 holds out.
+    held_out = np.load(fold / "predictions.npz")["target"]
+    trained_on = np.load(tmp_path / "cv" / "main" / "mlp" / "fold_1" / "predictions.npz")["target"]
+    positive = trained_on.sum()
+    assert metrics["pos_weight"] == (trained_on.size - positive) / positive
+    assert held_out.size + trained_on.size == 24
+
+    numeric = _cv_config(dataset, pretrained, tmp_path / "cv_numeric")
+    numeric["training"]["pos_weight"] = 3.5
+    numeric["variants"] = [VARIANTS[0]]
+    run_cv(numeric)
+    numeric_metrics = json.loads(
+        (tmp_path / "cv_numeric" / "main" / "mlp" / "fold_0" / "metrics.json").read_text()
+    )
+    assert numeric_metrics["pos_weight"] == 3.5
 
 
 def test_cv_resumes_completed_folds(tmp_path: Path, dataset: GraphDataset, pretrained: Path) -> None:

@@ -23,6 +23,12 @@ paper = ["scikit-learn>=1.6", "matplotlib>=3.10", "mygene>=3.2"]
 # raw GDSC/CCLP/Reactome files. `pathwaygnn-data cdr-prepare` and everything
 # downstream of it read the bundle with numpy alone and need none of this.
 # The downloader also shells out to `pdftotext` (Poppler) and LibreOffice.
+# Only for `pathwaygnn-data tr-build-processed`, which rebuilds
+# data_tr/processed/ from the LINCS/CREEDS/PathwayCommons downloads. The LINCS
+# Level 5 matrix is a GCTX (HDF5) file, hence h5py; the downloader itself
+# (scripts/tr/upstream/) is standard library only, and `tr-prepare` and
+# everything downstream of it need none of this.
+tr-upstream = ["h5py>=3.11"]
 cdr-upstream = [
   "pandas>=2.2",
   "scikit-learn>=1.6",

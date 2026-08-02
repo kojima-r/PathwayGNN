@@ -63,6 +63,24 @@ def normalize_covariates(batch, mean: Tensor | None, std: Tensor | None):
     return batch
 
 
+def _pos_weight(setting: Any, targets: np.ndarray, device: torch.device) -> Tensor | None:
+    """The BCE positive-class weight for one fold.
+
+    ``None`` (the default) leaves the loss unweighted, which is what the
+    published cancer runs used. ``"auto"`` is ``negatives / positives`` of the
+    fold's training split — the same rule ``finetune`` applies — so the two
+    protocols can be compared on an imbalanced task. A number is used verbatim.
+    """
+    if setting is None or setting is False:
+        return None
+    if setting is True or (isinstance(setting, str) and setting.lower() == "auto"):
+        positive = float(np.asarray(targets).sum())
+        value = (targets.size - positive) / max(positive, 1.0)
+    else:
+        value = float(setting)
+    return torch.tensor(value, device=device)
+
+
 def _evaluate(
     predictor: SampleLevelModel,
     encoder: RelationalGIN | None,
@@ -199,6 +217,7 @@ def _one_fold(
         optimizer, mode="max", factor=0.5, patience=int(training.get("scheduler_patience", 10))
     )
     mean, std = standardizer(task.covariates(), train_index, device)
+    pos_weight = _pos_weight(training.get("pos_weight"), train_data.targets, device)
     loss_clip = training.get("loss_clip")
     reduction = training.get("loss_reduction", "mean")
     grad_clip = training.get("grad_clip_value", 10.0)
@@ -217,7 +236,7 @@ def _one_fold(
             optimizer.zero_grad(set_to_none=True)
             logits = predictor(batch, embeddings)
             losses = torch.nn.functional.binary_cross_entropy_with_logits(
-                logits, batch.label, reduction="none"
+                logits, batch.label, pos_weight=pos_weight, reduction="none"
             )
             if loss_clip is not None:
                 losses = losses.clamp_min(float(loss_clip))
@@ -283,6 +302,7 @@ def _one_fold(
         "selected_epoch": best_state["epoch"],
         "duration_seconds": time.time() - started,
         "seed": fold_seed,
+        "pos_weight": None if pos_weight is None else float(pos_weight),
         "per_group_auc": _per_group_auc(task, best_state),
         "history": history,
     }

@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Preprocessing only: raw target-repositioning files -> data_tr/prepared.
+# Preprocessing only: data_tr/processed -> data_tr/prepared.
+#
+# The stage before it (public sources -> the bundle) is separate and has its own
+# dependency (h5py, for the LINCS GCTX matrix):
+#   python -m scripts.tr.upstream.download_raw_data
+#   bash scripts/tr/build_processed.sh
+# Skip it when data_tr/processed/ is already present.
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
