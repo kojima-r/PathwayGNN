@@ -4,18 +4,18 @@ import numpy as np
 import pytest
 import torch
 
-from pathwaygnn.data.format import DatasetWriter, GraphDataset, TaskChannel
+from pathwaygnn.data.format import DatasetWriter, GraphDataset, TaskNodeFeature
 
 NUM_NODES = 24
 NUM_RELATIONS = 2
 NUM_SAMPLES = 24
 NUM_GENES = 6
 GROUPS = ["g0", "g1", "g2"]
-COVARIATES = ["c0", "c1", "c2"]
+SAMPLE_FEATURES = ["c0", "c1", "c2"]
 
 
 def build_dataset(root: Path, name: str = "toy") -> GraphDataset:
-    """A tiny prepared dataset with one sparse and one dense channel."""
+    """A tiny prepared dataset with one sparse and one dense node-level feature."""
     generator = np.random.default_rng(0)
     source, target, relation = [], [], []
     for node in range(NUM_NODES):
@@ -44,27 +44,27 @@ def build_dataset(root: Path, name: str = "toy") -> GraphDataset:
             gene.append((row * 3 + column) % NUM_NODES)
             value.append(float(generator.normal()))
         ptr.append(len(gene))
-    writer.sparse_channel("signature", ptr, gene, value)
+    writer.sparse_node_feature("signature", ptr, gene, value)
 
-    channel_dir = writer.dense_channel("expression", NUM_SAMPLES, NUM_GENES)
+    node_feature_dir = writer.dense_node_feature("expression", NUM_SAMPLES, NUM_GENES)
     np.save(
-        channel_dir / "matrix.npy",
+        node_feature_dir / "matrix.npy",
         generator.normal(size=(NUM_SAMPLES, NUM_GENES)).astype(np.float32),
     )
-    np.save(channel_dir / "gene_index.npy", np.arange(NUM_GENES, dtype=np.int64))
+    np.save(node_feature_dir / "gene_index.npy", np.arange(NUM_GENES, dtype=np.int64))
 
     labels = np.tile([0.0, 1.0], NUM_SAMPLES // 2).astype(np.float32)
     writer.write_task(
         "main",
         labels,
-        channels={
-            "expression": TaskChannel("expression"),
-            "signature": TaskChannel("signature", np.arange(NUM_SAMPLES) % rows),
+        node_features={
+            "expression": TaskNodeFeature("expression"),
+            "signature": TaskNodeFeature("signature", np.arange(NUM_SAMPLES) % rows),
         },
-        covariates=np.eye(len(COVARIATES), dtype=np.float32)[
-            np.arange(NUM_SAMPLES) % len(COVARIATES)
+        sample_features=np.eye(len(SAMPLE_FEATURES), dtype=np.float32)[
+            np.arange(NUM_SAMPLES) % len(SAMPLE_FEATURES)
         ],
-        covariate_names=COVARIATES,
+        sample_feature_names=SAMPLE_FEATURES,
         groups=np.arange(NUM_SAMPLES) % len(GROUPS),
         group_names=GROUPS,
         seed_offset=7,

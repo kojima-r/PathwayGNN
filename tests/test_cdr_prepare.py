@@ -77,19 +77,19 @@ def test_prepare_writes_a_generic_dataset(tmp_path: Path) -> None:
     assert manifest["source"]["distinct_mutation_profiles"] == 2
     assert manifest["source"]["num_compounds"] == 3
     assert manifest["source"]["num_cell_lines"] == 2
-    assert manifest["channels"]["mutation"]["num_rows"] == 2
+    assert manifest["node_features"]["mutation"]["num_rows"] == 2
     assert manifest["tasks"] == ["sensitive_drugwise", "sensitive_global"]
-    # The temporary covariate matrix does not survive preprocessing.
-    assert not (prepared / "covariates.npy").exists()
+    # The temporary sample-level feature matrix does not survive preprocessing.
+    assert not (prepared / "sample_features.npy").exists()
 
     dataset = GraphDataset.open(prepared, "cdr")
     assert dataset.node_names() == ["1100", "3236", "7157"]
     task = dataset.task("sensitive_drugwise")
-    assert task.channel_names == ("mutation",)
+    assert task.node_feature_names == ("mutation",)
     # Every primary site of the bundle is named, whether or not it is used here.
     assert task.group_names == PRIMARY_SITES
-    assert task.covariate_dim == SPECTRA_DIM + len(PRIMARY_SITES) + FINGERPRINT_BITS
-    assert task.covariate_names[SPECTRA_DIM] == "site_Bladder"
+    assert task.sample_feature_dim == SPECTRA_DIM + len(PRIMARY_SITES) + FINGERPRINT_BITS
+    assert task.sample_feature_names[SPECTRA_DIM] == "site_Bladder"
 
     # Every compound is split at its own median, so exactly half of each
     # compound's samples are positive; the global split is potency-driven.
@@ -100,7 +100,7 @@ def test_prepare_writes_a_generic_dataset(tmp_path: Path) -> None:
     assert json.loads((prepared / "tasks/sensitive_drugwise/task.json").read_text())["num_positive"] == 3
 
 
-def test_channel_rows_are_shared_between_samples_of_one_cell_line(tmp_path: Path) -> None:
+def test_node_feature_rows_are_shared_between_samples_of_one_cell_line(tmp_path: Path) -> None:
     source, prepared = tmp_path / "source", tmp_path / "prepared"
     source.mkdir()
     make_source(source)
@@ -110,20 +110,20 @@ def test_channel_rows_are_shared_between_samples_of_one_cell_line(tmp_path: Path
 
     rows = np.asarray(task.rows("mutation"))
     assert rows.tolist() == [0, 1, 0, 1, 0, 1]
-    ptr, gene, value = (np.asarray(item) for item in dataset.channel("mutation").csr())
+    ptr, gene, value = (np.asarray(item) for item in dataset.node_feature("mutation").csr())
     # Cell line 0 carries two mutations of node 0 and one of node 2.
     assert gene[ptr[0] : ptr[1]].tolist() == [0, 2]
     assert value[ptr[0] : ptr[1]].tolist() == [2.0, 1.0]
 
     data = TaskDataset(task)
     batch = data.collate()([data[0], data[2]])
-    assert batch.channels["mutation"].kind == "sparse"
-    assert batch.covariate is not None
-    assert batch.covariate.shape == (2, task.covariate_dim)
+    assert batch.node_features["mutation"].kind == "sparse"
+    assert batch.sample_feature is not None
+    assert batch.sample_feature.shape == (2, task.sample_feature_dim)
     encoder = RelationalGIN(dataset.num_nodes, dataset.num_relations, hidden_dim=8, dropout=0)
     logits = SampleLevelModel(
-        task.channel_names, embedding_dim=8, hidden_dim=8, covariate_dim=task.covariate_dim,
-        use_covariates=True,
+        task.node_feature_names, embedding_dim=8, hidden_dim=8, sample_feature_dim=task.sample_feature_dim,
+        use_sample_features=True,
     )(batch, encoder(*dataset.graph()))
     assert logits.shape == (2,)
     logits.sum().backward()
@@ -135,5 +135,5 @@ def test_binary_mutations_drop_the_counts(tmp_path: Path) -> None:
     make_source(source)
     prepare_cdr_dataset(source, prepared, binary_mutations=True)
     dataset = GraphDataset.open(prepared, "cdr")
-    _, _, value = (np.asarray(item) for item in dataset.channel("mutation").csr())
+    _, _, value = (np.asarray(item) for item in dataset.node_feature("mutation").csr())
     assert set(value.tolist()) == {1.0}

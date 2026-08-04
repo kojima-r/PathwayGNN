@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from pathwaygnn.data.format import Channel, GraphDataset, Task, open_task
+from pathwaygnn.data.format import NodeFeature, GraphDataset, Task, open_task
 from pathwaygnn.training.metrics import binary_metrics
 
 
@@ -24,11 +24,11 @@ def _dependencies():
     return sparse, RandomForestClassifier, LogisticRegression, StratifiedKFold
 
 
-def _channel_matrix(channel: Channel, rows: np.ndarray | None, num_nodes: int, sparse):
-    """One channel as a ``[samples, num_nodes]`` sparse matrix."""
-    if channel.dense:
-        matrix = channel.matrix()
-        gene_index = channel.gene_index()
+def _node_feature_matrix(node_feature: NodeFeature, rows: np.ndarray | None, num_nodes: int, sparse):
+    """One node-level feature as a ``[samples, num_nodes]`` sparse matrix."""
+    if node_feature.dense:
+        matrix = node_feature.matrix()
+        gene_index = node_feature.gene_index()
         values = np.asarray(matrix if rows is None else matrix[rows], dtype=np.float32)
         table = sparse.csr_matrix(
             (
@@ -42,7 +42,7 @@ def _channel_matrix(channel: Channel, rows: np.ndarray | None, num_nodes: int, s
             dtype=np.float32,
         )
         return table
-    ptr, gene, value = (np.asarray(item) for item in channel.csr())
+    ptr, gene, value = (np.asarray(item) for item in node_feature.csr())
     table = sparse.csr_matrix(
         (value, gene, ptr), shape=(ptr.size - 1, num_nodes), dtype=np.float32
     )
@@ -51,12 +51,12 @@ def _channel_matrix(channel: Channel, rows: np.ndarray | None, num_nodes: int, s
 
 def _features(dataset: GraphDataset, task: Task, sparse):
     blocks = [
-        _channel_matrix(channel, task.rows(channel.name), dataset.num_nodes, sparse)
-        for channel in task.channels
+        _node_feature_matrix(node_feature, task.rows(node_feature.name), dataset.num_nodes, sparse)
+        for node_feature in task.node_features
     ]
-    covariates = task.covariates()
-    if covariates is not None:
-        blocks.append(sparse.csr_matrix(np.asarray(covariates, dtype=np.float32)))
+    sample_features = task.sample_features()
+    if sample_features is not None:
+        blocks.append(sparse.csr_matrix(np.asarray(sample_features, dtype=np.float32)))
     x = sparse.hstack(blocks, format="csr") if len(blocks) > 1 else blocks[0]
     return x, task.labels().astype(np.int64)
 

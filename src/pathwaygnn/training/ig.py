@@ -2,7 +2,7 @@
 
 Attributes a trained cross-validation fold with respect to three input groups:
 the graph node embedding matrix (when the variant uses the graph), the values of
-every channel, and the covariate vector. Node rankings are written with the
+every node_feature, and the sample_feature vector. Node rankings are written with the
 dataset's own node names, and per-group rankings use the task's group names.
 """
 
@@ -51,23 +51,23 @@ def _scatter(values: Tensor, index: Tensor, size: int) -> Tensor:
 
 
 def _scale(
-    batch: SampleBatch, alpha: Tensor, include_covariate: bool
+    batch: SampleBatch, alpha: Tensor, include_sample_feature: bool
 ) -> tuple[SampleBatch, list[Tensor]]:
     """A copy of ``batch`` whose values are scaled by ``alpha`` and differentiable.
 
     Only inputs the model actually consumes are made differentiable, so that
     ``autograd.grad`` stays strict about unused tensors.
     """
-    inputs, channels = [], {}
-    for name, channel in batch.channels.items():
-        value = (channel.value * alpha).detach().requires_grad_(True)
+    inputs, node_features = [], {}
+    for name, node_feature in batch.node_features.items():
+        value = (node_feature.value * alpha).detach().requires_grad_(True)
         inputs.append(value)
-        channels[name] = replace(channel, value=value)
-    covariate = batch.covariate
-    if include_covariate and covariate is not None:
-        covariate = (covariate * alpha).detach().requires_grad_(True)
-        inputs.append(covariate)
-    return replace(batch, channels=channels, covariate=covariate), inputs
+        node_features[name] = replace(node_feature, value=value)
+    sample_feature = batch.sample_feature
+    if include_sample_feature and sample_feature is not None:
+        sample_feature = (sample_feature * alpha).detach().requires_grad_(True)
+        inputs.append(sample_feature)
+    return replace(batch, node_features=node_features, sample_feature=sample_feature), inputs
 
 
 def run_ig(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -102,8 +102,8 @@ def run_ig(cfg: dict[str, Any]) -> dict[str, Any]:
     predictor = SampleLevelModel.from_config(model_config).to(device)
     predictor.load_state_dict(checkpoint["predictor"])
     predictor.eval()
-    mean = checkpoint.get("covariate_mean")
-    std = checkpoint.get("covariate_std")
+    mean = checkpoint.get("sample_feature_mean")
+    std = checkpoint.get("sample_feature_std")
     mean = None if mean is None else mean.to(device)
     std = None if std is None else std.to(device)
 
@@ -122,23 +122,23 @@ def run_ig(cfg: dict[str, Any]) -> dict[str, Any]:
     graph_ig = torch.zeros((num_nodes, predictor.embedding_dim), dtype=torch.float64)
     group_graph_ig = torch.zeros((task.num_groups, num_nodes), dtype=torch.float64)
     group_counts = torch.zeros(max(task.num_groups, 1), dtype=torch.long)
-    channel_ig = {name: torch.zeros(num_nodes, dtype=torch.float64) for name in task.channel_names}
-    covariate_ig = torch.zeros(max(task.covariate_dim, 1), dtype=torch.float64)
-    covered = {name: torch.zeros(num_nodes, dtype=torch.bool) for name in task.channel_names}
+    node_feature_ig = {name: torch.zeros(num_nodes, dtype=torch.float64) for name in task.node_feature_names}
+    sample_feature_ig = torch.zeros(max(task.sample_feature_dim, 1), dtype=torch.float64)
+    covered = {name: torch.zeros(num_nodes, dtype=torch.bool) for name in task.node_feature_names}
 
     for count, sample_index in enumerate(sample_indices, start=1):
         batch = collate([data[int(sample_index)]]).to(device)
-        if batch.covariate is not None and mean is not None:
-            batch.covariate = (batch.covariate - mean) / std
-        value_gradient = {name: torch.zeros_like(ch.value) for name, ch in batch.channels.items()}
-        covariate_gradient = (
-            torch.zeros_like(batch.covariate)
-            if predictor.use_covariates and batch.covariate is not None
+        if batch.sample_feature is not None and mean is not None:
+            batch.sample_feature = (batch.sample_feature - mean) / std
+        value_gradient = {name: torch.zeros_like(ch.value) for name, ch in batch.node_features.items()}
+        sample_feature_gradient = (
+            torch.zeros_like(batch.sample_feature)
+            if predictor.use_sample_features and batch.sample_feature is not None
             else None
         )
         embedding_gradient = None if base_embedding is None else torch.zeros_like(base_embedding)
         for alpha in torch.linspace(0.0, 1.0, steps, device=device):
-            scaled, inputs = _scale(batch, alpha, predictor.use_covariates)
+            scaled, inputs = _scale(batch, alpha, predictor.use_sample_features)
             node_embeddings = None
             if use_graph:
                 scaled_embedding = (base_embedding * alpha).detach().requires_grad_(True)
@@ -148,21 +148,21 @@ def run_ig(cfg: dict[str, Any]) -> dict[str, Any]:
             gradients = list(torch.autograd.grad(probability, tuple(inputs), retain_graph=False))
             if use_graph:
                 embedding_gradient += gradients.pop()  # type: ignore[operator]
-            if covariate_gradient is not None:
-                covariate_gradient += gradients.pop()
-            for name, gradient in zip(batch.channels, gradients):
+            if sample_feature_gradient is not None:
+                sample_feature_gradient += gradients.pop()
+            for name, gradient in zip(batch.node_features, gradients):
                 value_gradient[name] += gradient
-        for name, channel in batch.channels.items():
-            attribution = channel.value * value_gradient[name] / steps
+        for name, node_feature in batch.node_features.items():
+            attribution = node_feature.value * value_gradient[name] / steps
             index = (
-                channel.gene.repeat(channel.value.size(0))
-                if channel.dense
-                else channel.gene
+                node_feature.gene.repeat(node_feature.value.size(0))
+                if node_feature.dense
+                else node_feature.gene
             )
-            channel_ig[name] += _scatter(attribution, index, num_nodes)
+            node_feature_ig[name] += _scatter(attribution, index, num_nodes)
             covered[name][index.cpu()] = True
-        if covariate_gradient is not None:
-            covariate_ig += (batch.covariate * covariate_gradient / steps).reshape(-1).double().cpu()
+        if sample_feature_gradient is not None:
+            sample_feature_ig += (batch.sample_feature * sample_feature_gradient / steps).reshape(-1).double().cpu()
         if embedding_gradient is not None:
             sample_graph_ig = (base_embedding * embedding_gradient / steps).double().cpu()
             graph_ig += sample_graph_ig
@@ -189,19 +189,19 @@ def run_ig(cfg: dict[str, Any]) -> dict[str, Any]:
             _ranking_rows(graph_score, node_names, order, absolute=False),
         )
         arrays["graph_score"] = graph_score.numpy()
-    for name in task.channel_names:
-        score = channel_ig[name] / denominator
+    for name in task.node_feature_names:
+        score = node_feature_ig[name] / denominator
         candidates = torch.where(covered[name])[0]
         order = candidates[torch.argsort(score[candidates].abs(), descending=True)][:top_k].numpy()
         _write_ranking(
-            output / f"top_channel_{name}.tsv",
+            output / f"top_node_feature_{name}.tsv",
             ["rank", "node_index", "node", "signed_ig", "absolute_ig"],
             _ranking_rows(score, node_names, order, absolute=True),
         )
-        arrays[f"channel_{name}"] = score.numpy()
-    covariate_score = covariate_ig / denominator
-    if task.covariate_dim:
-        arrays["covariate_score"] = covariate_score[: task.covariate_dim].numpy()
+        arrays[f"node_feature_{name}"] = score.numpy()
+    sample_feature_score = sample_feature_ig / denominator
+    if task.sample_feature_dim:
+        arrays["sample_feature_score"] = sample_feature_score[: task.sample_feature_dim].numpy()
     correlation = None
     if use_graph:
         edge_index, _ = dataset.graph()
@@ -236,9 +236,9 @@ def run_ig(cfg: dict[str, Any]) -> dict[str, Any]:
         "num_samples": len(sample_indices),
         "integration_steps": steps,
         "degree_ig_pearson_r": correlation,
-        "covariate_ig": {
-            name: float(covariate_score[position])
-            for position, name in enumerate(task.covariate_names)
+        "sample_feature_ig": {
+            name: float(sample_feature_score[position])
+            for position, name in enumerate(task.sample_feature_names)
         },
         "per_group_samples": per_group,
         "reference": cfg.get("reference", {}),

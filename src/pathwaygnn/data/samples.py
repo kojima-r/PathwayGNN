@@ -15,8 +15,8 @@ from pathwaygnn.data.format import Task
 
 
 @dataclass
-class ChannelBatch:
-    """One channel of a batch.
+class NodeFeatureBatch:
+    """One node-level feature of a batch.
 
     ``dense``: ``value`` is ``[batch, genes]`` and ``gene`` the shared ``[genes]``
     node indices. ``sparse``: ``value`` is ``[values, 1]``, ``gene`` the matching
@@ -32,8 +32,8 @@ class ChannelBatch:
     def dense(self) -> bool:
         return self.kind == "dense"
 
-    def to(self, device: torch.device | str) -> "ChannelBatch":
-        return ChannelBatch(
+    def to(self, device: torch.device | str) -> "NodeFeatureBatch":
+        return NodeFeatureBatch(
             self.kind,
             self.gene.to(device),
             self.value.to(device),
@@ -43,10 +43,10 @@ class ChannelBatch:
 
 @dataclass
 class SampleBatch:
-    channels: dict[str, ChannelBatch]
+    node_features: dict[str, NodeFeatureBatch]
     label: Tensor
     index: Tensor
-    covariate: Tensor | None = None
+    sample_feature: Tensor | None = None
     group: Tensor | None = None
 
     @property
@@ -55,40 +55,40 @@ class SampleBatch:
 
     def to(self, device: torch.device | str) -> "SampleBatch":
         return SampleBatch(
-            {name: channel.to(device) for name, channel in self.channels.items()},
+            {name: node_feature.to(device) for name, node_feature in self.node_features.items()},
             self.label.to(device),
             self.index,
-            None if self.covariate is None else self.covariate.to(device),
+            None if self.sample_feature is None else self.sample_feature.to(device),
             None if self.group is None else self.group.to(device),
         )
 
 
 class Collate:
-    """Picklable collate function; holds only the channel kinds and gene indices."""
+    """Picklable collate function; holds only the feature kinds and gene indices."""
 
     def __init__(self, kinds: dict[str, str], gene_index: dict[str, Tensor]):
         self.kinds = kinds
         self.gene_index = gene_index
 
     def __call__(self, rows: list[dict[str, Any]]) -> SampleBatch:
-        channels: dict[str, ChannelBatch] = {}
+        node_features: dict[str, NodeFeatureBatch] = {}
         for name, kind in self.kinds.items():
             if kind == "dense":
-                value = torch.stack([row["channels"][name] for row in rows])
-                channels[name] = ChannelBatch("dense", self.gene_index[name], value)
+                value = torch.stack([row["node_features"][name] for row in rows])
+                node_features[name] = NodeFeatureBatch("dense", self.gene_index[name], value)
                 continue
-            genes = [row["channels"][name][0] for row in rows]
-            values = [row["channels"][name][1] for row in rows]
+            genes = [row["node_features"][name][0] for row in rows]
+            values = [row["node_features"][name][1] for row in rows]
             counts = torch.tensor([item.numel() for item in genes], dtype=torch.long)
-            channels[name] = ChannelBatch(
+            node_features[name] = NodeFeatureBatch(
                 "sparse",
                 torch.cat(genes),
                 torch.cat(values).reshape(-1, 1),
                 torch.repeat_interleave(torch.arange(len(rows), dtype=torch.long), counts),
             )
-        covariate = (
-            torch.stack([row["covariate"] for row in rows])
-            if rows and rows[0]["covariate"] is not None
+        sample_feature = (
+            torch.stack([row["sample_feature"] for row in rows])
+            if rows and rows[0]["sample_feature"] is not None
             else None
         )
         group = (
@@ -97,10 +97,10 @@ class Collate:
             else None
         )
         return SampleBatch(
-            channels=channels,
+            node_features=node_features,
             label=torch.stack([row["label"] for row in rows]),
             index=torch.tensor([row["index"] for row in rows], dtype=torch.long),
-            covariate=covariate,
+            sample_feature=sample_feature,
             group=group,
         )
 
@@ -110,21 +110,21 @@ class TaskDataset(Dataset):
 
     def __init__(self, task: Task, indices: Sequence[int] | np.ndarray | None = None):
         self.task = task
-        self.channels = task.channels
+        self.node_features = task.node_features
         self._tables: dict[str, Any] = {}
         self._gene_index: dict[str, Tensor] = {}
-        for channel in task.channels:
-            if channel.dense:
-                self._tables[channel.name] = channel.matrix()
-                self._gene_index[channel.name] = torch.from_numpy(
-                    channel.gene_index().astype(np.int64, copy=True)
+        for node_feature in task.node_features:
+            if node_feature.dense:
+                self._tables[node_feature.name] = node_feature.matrix()
+                self._gene_index[node_feature.name] = torch.from_numpy(
+                    node_feature.gene_index().astype(np.int64, copy=True)
                 )
             else:
-                self._tables[channel.name] = channel.csr()
-        self._rows = {channel.name: task.rows(channel.name) for channel in task.channels}
+                self._tables[node_feature.name] = node_feature.csr()
+        self._rows = {node_feature.name: task.rows(node_feature.name) for node_feature in task.node_features}
         self._labels = task.labels()
         self._groups = task.groups()
-        self._covariates = task.covariates()
+        self._sample_features = task.sample_features()
         self.indices = (
             np.arange(self._labels.size, dtype=np.int64)
             if indices is None
@@ -144,7 +144,7 @@ class TaskDataset(Dataset):
 
     def collate(self) -> Collate:
         return Collate(
-            {channel.name: channel.kind for channel in self.channels}, self._gene_index
+            {node_feature.name: node_feature.kind for node_feature in self.node_features}, self._gene_index
         )
 
     def subset(self, indices: Sequence[int] | np.ndarray) -> "TaskDataset":
@@ -152,35 +152,35 @@ class TaskDataset(Dataset):
         clone.indices = self.indices[np.asarray(indices, dtype=np.int64)]
         return clone
 
-    def row(self, sample: int, channel: str) -> int:
-        rows = self._rows[channel]
+    def row(self, sample: int, node_feature: str) -> int:
+        rows = self._rows[node_feature]
         return sample if rows is None else int(rows[sample])
 
     def __getitem__(self, item: int) -> dict[str, Any]:
         index = int(self.indices[item])
-        channels: dict[str, Any] = {}
-        for channel in self.channels:
-            row = self.row(index, channel.name)
-            if channel.dense:
-                channels[channel.name] = torch.from_numpy(
-                    np.array(self._tables[channel.name][row], dtype=np.float32, copy=True)
+        node_features: dict[str, Any] = {}
+        for node_feature in self.node_features:
+            row = self.row(index, node_feature.name)
+            if node_feature.dense:
+                node_features[node_feature.name] = torch.from_numpy(
+                    np.array(self._tables[node_feature.name][row], dtype=np.float32, copy=True)
                 )
             else:
-                ptr, gene, value = self._tables[channel.name]
+                ptr, gene, value = self._tables[node_feature.name]
                 start, stop = int(ptr[row]), int(ptr[row + 1])
-                channels[channel.name] = (
+                node_features[node_feature.name] = (
                     torch.from_numpy(np.array(gene[start:stop], dtype=np.int64, copy=True)),
                     torch.from_numpy(np.array(value[start:stop], dtype=np.float32, copy=True)),
                 )
         return {
-            "channels": channels,
+            "node_features": node_features,
             "label": torch.tensor(float(self._labels[index]), dtype=torch.float32),
             "index": index,
-            "covariate": (
+            "sample_feature": (
                 None
-                if self._covariates is None
+                if self._sample_features is None
                 else torch.from_numpy(
-                    np.array(self._covariates[index], dtype=np.float32, copy=True)
+                    np.array(self._sample_features[index], dtype=np.float32, copy=True)
                 )
             ),
             "group": None if self._groups is None else int(self._groups[index]),

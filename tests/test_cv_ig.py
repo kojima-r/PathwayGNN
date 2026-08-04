@@ -1,5 +1,5 @@
 """Cross-validation and Integrated Gradients are dataset-agnostic: run both on a
-synthetic dataset that has one dense channel, one sparse channel, covariates and
+synthetic dataset that has one dense node_feature, one sparse node_feature, sample_features and
 groups, mixing graph-free and graph variants in a single grid."""
 
 import json
@@ -14,8 +14,8 @@ from pathwaygnn.training.ig import run_ig
 from pathwaygnn.training.metrics import METRICS, threshold_metrics
 
 VARIANTS = [
-    {"name": "mlp", "use_graph": False, "use_covariates": False, "seed_index": 0},
-    {"name": "gnn_cov", "use_graph": True, "use_covariates": True, "seed_index": 3},
+    {"name": "mlp", "use_graph": False, "use_sample_features": False, "seed_index": 0},
+    {"name": "gnn_cov", "use_graph": True, "use_sample_features": True, "seed_index": 3},
 ]
 
 
@@ -68,8 +68,8 @@ def test_cv_grid_and_ig(tmp_path: Path, dataset: GraphDataset, pretrained: Path)
         assert results["main/gnn_cov"][f"fold_{metric}"][0] == metrics[metric]
     assert metrics["history"][metrics["selected_epoch"] - 1]["test_auc"] == metrics["auc"]
     checkpoint = torch.load(fold / "model.pt", map_location="cpu", weights_only=False)
-    assert checkpoint["model_config"]["channels"] == ["expression", "signature"]
-    assert checkpoint["covariate_mean"].shape == (3,)
+    assert checkpoint["model_config"]["node_features"] == ["expression", "signature"]
+    assert checkpoint["sample_feature_mean"].shape == (3,)
     # The graph-free variant stores no encoder and no graph flag.
     free = torch.load(output / "main" / "mlp" / "fold_0" / "model.pt",
                       map_location="cpu", weights_only=False)
@@ -93,19 +93,19 @@ def test_cv_grid_and_ig(tmp_path: Path, dataset: GraphDataset, pretrained: Path)
     })
     assert summary["num_samples"] == 4
     assert np.isfinite(summary["degree_ig_pearson_r"])
-    assert set(summary["covariate_ig"]) == {"c0", "c1", "c2"}
+    assert set(summary["sample_feature_ig"]) == {"c0", "c1", "c2"}
     assert summary["reference"] == {"degree_ig_pearson_r": 0.727}
     arrays = np.load(ig_output / "attributions.npz")
     assert arrays["graph_score"].shape == (dataset.num_nodes,)
     assert arrays["degree"].shape == (dataset.num_nodes,)
-    assert arrays["channel_expression"].shape == (dataset.num_nodes,)
+    assert arrays["node_feature_expression"].shape == (dataset.num_nodes,)
     graph_ranking = (ig_output / "top_graph_nodes.tsv").read_text().splitlines()
     assert graph_ranking[0].split("\t") == ["rank", "node_index", "node", "ig_l2"]
     assert len(graph_ranking) == 6
-    # Channel rankings only cover nodes the channel actually carries.
-    expression = (ig_output / "top_channel_expression.tsv").read_text().splitlines()[1:]
+    # Per-feature rankings only cover the nodes that feature actually carries.
+    expression = (ig_output / "top_node_feature_expression.tsv").read_text().splitlines()[1:]
     assert {int(line.split("\t")[1]) for line in expression} <= set(range(6))
-    signature = (ig_output / "top_channel_signature.tsv").read_text().splitlines()[1:]
+    signature = (ig_output / "top_node_feature_signature.tsv").read_text().splitlines()[1:]
     assert signature and all(len(line.split("\t")) == 5 for line in signature)
     # One ranking per group that the sampled subset actually covers.
     assert sum(summary["per_group_samples"].values()) == 4
@@ -133,7 +133,7 @@ def test_ig_without_graph_skips_node_attribution(
     assert result["degree_ig_pearson_r"] is None
     assert not (tmp_path / "ig_free" / "top_graph_nodes.tsv").exists()
     arrays = np.load(tmp_path / "ig_free" / "attributions.npz")
-    assert "graph_score" not in arrays and "channel_signature" in arrays
+    assert "graph_score" not in arrays and "node_feature_signature" in arrays
 
 
 def test_cv_pos_weight_matches_the_finetune_rule(

@@ -7,11 +7,11 @@ writes one prepared dataset in :mod:`pathwaygnn.data.format`:
   ``scripts/cdr/upstream/prepare_data.py`` encoded it (already undirected and
   self-loop free), with ``vertices_dic.tsv`` / ``relationships_dic.tsv`` supplying
   the node and relation names.
-* channel ``mutation`` (sparse) — mutations per cancer-gene-census gene of the
+* node_feature ``mutation`` (sparse) — mutations per cancer-gene-census gene of the
   sample's cell line. A GDSC sample is a *(cell line, compound)* pair, so every
   compound screened against one cell line repeats the same mutation profile;
   identical profiles are stored once and ``rows/mutation.npy`` maps sample -> row.
-* covariates — the GraphCDRScan sample-feature vector verbatim: the 96/78/83
+* sample_features — the GraphCDRScan sample-feature vector verbatim: the 96/78/83
   mutational spectra of the cell line, its primary-site one-hot and the
   3 x 1024-bit compound fingerprint.
 * groups — the cell line's primary site, so per-group AUC is per cancer type.
@@ -35,7 +35,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from pathwaygnn.data.format import DatasetWriter, TaskChannel
+from pathwaygnn.data.format import DatasetWriter, TaskNodeFeature
 
 SOURCE_FILES = {
     "vertices": "vertices_dic.tsv",
@@ -148,7 +148,7 @@ def _read_labels(path: Path) -> np.ndarray:
     return np.asarray([values[index] for index in range(len(values))], dtype=np.float64)
 
 
-def _covariate_names(num_sites: int) -> list[str]:
+def _sample_feature_names(num_sites: int) -> list[str]:
     names = [f"{block}_{position}" for block, size in SPECTRA_BLOCKS for position in range(size)]
     names += [
         f"site_{PRIMARY_SITES[position]}" if num_sites == len(PRIMARY_SITES) else f"site_{position}"
@@ -158,8 +158,8 @@ def _covariate_names(num_sites: int) -> list[str]:
     return names
 
 
-def _read_sample_features(path: Path, covariate_path: Path, num_samples: int):
-    """Stream the sample table into a memmapped covariate matrix.
+def _read_sample_features(path: Path, sample_feature_path: Path, num_samples: int):
+    """Stream the sample table into a memmapped sample-level feature matrix.
 
     Returns the primary-site code per sample, the compound and cell-line
     identities recovered from the row (the upstream bundle drops ``DRUG_ID`` and
@@ -174,9 +174,9 @@ def _read_sample_features(path: Path, covariate_path: Path, num_samples: int):
             f"{path} has {width} feature columns, fewer than the {SPECTRA_DIM} spectra plus "
             f"{FINGERPRINT_BITS} fingerprint bits this reader expects"
         )
-    covariate_path.parent.mkdir(parents=True, exist_ok=True)
-    covariates = np.lib.format.open_memmap(
-        covariate_path, mode="w+", dtype=np.float32, shape=(num_samples, width)
+    sample_feature_path.parent.mkdir(parents=True, exist_ok=True)
+    sample_features = np.lib.format.open_memmap(
+        sample_feature_path, mode="w+", dtype=np.float32, shape=(num_samples, width)
     )
     site_code = np.full(num_samples, -1, dtype=np.int64)
     drug_of = np.full(num_samples, -1, dtype=np.int64)
@@ -191,7 +191,7 @@ def _read_sample_features(path: Path, covariate_path: Path, num_samples: int):
             index = int(parts[0])
             if not 0 <= index < num_samples:
                 raise ValueError(f"{path} holds sample {index}, outside 0..{num_samples - 1}")
-            covariates[index] = np.array(parts[2:], dtype=np.float32)
+            sample_features[index] = np.array(parts[2:], dtype=np.float32)
             code = int(parts[1])
             site_code[index] = code
             hot = [
@@ -208,8 +208,8 @@ def _read_sample_features(path: Path, covariate_path: Path, num_samples: int):
                     )
             drug_of[index] = drugs.setdefault("".join(parts[fingerprint_start:]), len(drugs))
             cell_of[index] = cells.setdefault("\t".join(parts[1 : 2 + SPECTRA_DIM]), len(cells))
-    covariates.flush()
-    del covariates
+    sample_features.flush()
+    del sample_features
     if (site_code < 0).any():
         raise ValueError(f"{path} does not cover every sample of the label table")
     return site_code, drug_of, cell_of, code_to_position, num_sites
@@ -308,34 +308,34 @@ def prepare_cdr_dataset(
     )
     writer.write_graph(edge_index, edge_type, nodes, relations)
 
-    covariate_path = output_dir / "covariates.npy"
+    sample_feature_path = output_dir / "sample_features.npy"
     site_code, drug_of, cell_of, code_to_position, num_sites = _read_sample_features(
-        _source(source_dir, "sample_features"), covariate_path, num_samples
+        _source(source_dir, "sample_features"), sample_feature_path, num_samples
     )
-    covariate_names = _covariate_names(num_sites)
+    sample_feature_names = _sample_feature_names(num_sites)
     positions = sorted(code_to_position.values())
     if len(set(positions)) != len(positions) or not all(0 <= p < num_sites for p in positions):
         raise ValueError("the primary-site one-hot block does not identify every cancer type once")
     # Report groups in the one-hot (alphabetical) order rather than the
     # order-of-appearance codes the upstream bundle stores.
     groups = np.asarray([code_to_position[int(code)] for code in site_code], dtype=np.int64)
-    site_names = [name.removeprefix("site_") for name in covariate_names[SPECTRA_DIM : SPECTRA_DIM + num_sites]]
+    site_names = [name.removeprefix("site_") for name in sample_feature_names[SPECTRA_DIM : SPECTRA_DIM + num_sites]]
 
     csr, mutation_rows, node_stats = _read_node_features(
         _source(source_dir, "node_features"), num_samples, len(nodes), binary_mutations
     )
-    writer.sparse_channel("mutation", *csr)
+    writer.sparse_node_feature("mutation", *csr)
     writer.source.update(
         {
             "num_compounds": int(drug_of.max()) + 1,
             "num_cell_lines": int(cell_of.max()) + 1,
             "num_primary_sites": num_sites,
-            "covariate_dim": len(covariate_names),
+            "sample_feature_dim": len(sample_feature_names),
             **node_stats,
         }
     )
 
-    covariates = np.load(covariate_path, mmap_mode="r")
+    sample_features = np.load(sample_feature_path, mmap_mode="r")
     thresholds = {
         DRUGWISE: _drugwise_median(ln_ic50, drug_of),
         GLOBAL: np.full_like(ln_ic50, float(np.median(ln_ic50))),
@@ -346,9 +346,9 @@ def prepare_cdr_dataset(
         task_manifest = writer.write_task(
             name,
             labels,
-            channels={"mutation": TaskChannel("mutation", mutation_rows)},
-            covariates=covariates,
-            covariate_names=covariate_names,
+            node_features={"mutation": TaskNodeFeature("mutation", mutation_rows)},
+            sample_features=sample_features,
+            sample_feature_names=sample_feature_names,
             groups=groups,
             group_names=site_names,
             seed_offset=seed_offset,
@@ -366,12 +366,12 @@ def prepare_cdr_dataset(
                 "num_cell_lines": int(cell_of.max()) + 1,
             },
         )
-        # 3348 covariate names would bury the summary the CLI prints.
+        # 3348 sample-level feature names would bury the summary the CLI prints.
         written[name] = {
-            key: value for key, value in task_manifest.items() if key != "covariate_names"
+            key: value for key, value in task_manifest.items() if key != "sample_feature_names"
         }
-    del covariates
-    covariate_path.unlink()
+    del sample_features
+    sample_feature_path.unlink()
     manifest = writer.finish()
     manifest["tasks_written"] = written
     return manifest

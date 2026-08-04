@@ -2,10 +2,10 @@
 
 Converts the upstream bundle in ``<source>/processed`` into one prepared dataset:
 
-* one dense channel per verification year (``expression_<n>year``), streamed from
+* one dense node_feature per verification year (``expression_<n>year``), streamed from
   the three-column node-input TSVs into a memmappable matrix
-* one task per year, binding the alias ``expression`` to that year's channel, with
-  the 33-dimensional cancer-type one-hot as covariates and the cancer type as the
+* one task per year, binding the alias ``expression`` to that year's node_feature, with
+  the 33-dimensional cancer-type one-hot as sample_features and the cancer type as the
   sample group
 
 ``seed_offset`` is the verification year, so a fold's seed does not depend on how
@@ -21,7 +21,7 @@ from typing import Any, Sequence
 import numpy as np
 import torch
 
-from pathwaygnn.data.format import DatasetWriter, TaskChannel
+from pathwaygnn.data.format import DatasetWriter, TaskNodeFeature
 from pathwaygnn_datasets.cancer.paper import CANCER_TYPES, PAPER_SAMPLE_COUNTS
 
 LEGACY_NOTE = (
@@ -158,21 +158,21 @@ def prepare_cancer_dataset(
                     "`strict_sample_counts: false` to accept it."
                 )
             print(json.dumps({"stage": "cancer_prepare", "warning": message}))
-        channel = f"expression_{year}year"
-        channel_dir = writer.dense_channel(channel, num_samples, num_genes)
+        node_feature = f"expression_{year}year"
+        node_feature_dir = writer.dense_node_feature(node_feature, num_samples, num_genes)
         _convert_node_input(
             legacy / f"{year}years_node_input.tsv",
-            channel_dir / "matrix.npy",
-            channel_dir / "gene_index.npy",
+            node_feature_dir / "matrix.npy",
+            node_feature_dir / "gene_index.npy",
             num_samples,
             num_genes,
         )
         writer.write_task(
             f"{year}year",
             labels[:, 1].astype(np.float32),
-            channels={"expression": TaskChannel(channel)},
-            covariates=samples[:, 2:].astype(np.float32),
-            covariate_names=CANCER_TYPES,
+            node_features={"expression": TaskNodeFeature(node_feature)},
+            sample_features=samples[:, 2:].astype(np.float32),
+            sample_feature_names=CANCER_TYPES,
             groups=samples[:, 1].astype(np.int64),
             group_names=CANCER_TYPES,
             seed_offset=int(year),

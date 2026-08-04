@@ -5,7 +5,7 @@
 source_dir: data_cdr/processed/full_features
 output_dir: data_cdr/prepared
 
-# false: the `mutation` channel carries the number of mutations of the gene in
+# false: the `mutation` node_feature carries the number of mutations of the gene in
 # the cell line. true: it carries 1.0 for every mutated gene.
 binary_mutations: false
 

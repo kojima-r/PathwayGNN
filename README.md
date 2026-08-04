@@ -76,29 +76,31 @@ dataset:
 <root>/dataset.json                 マニフェスト。name がデータセットを識別する
 <root>/graph.pt                     {"edge_index", "edge_type"}
 <root>/nodes.json, relations.json   ノード名、関係名
-<root>/channels/<channel>/          遺伝子-値テーブル（sparse=CSR / dense=memmap行列）
-<root>/tasks/<task>/                labels.npy, groups.npy, covariates.npy, rows/<alias>.npy
+<root>/node_features/<name>/        遺伝子-値テーブル（sparse=CSR / dense=memmap行列）
+<root>/tasks/<task>/                labels.npy, groups.npy, sample_features.npy, rows/<alias>.npy
 ```
 
-- **channel** はサンプルの遺伝子-値表現（摂動シグネチャ、疾患シグネチャ、発現プロファイル）。
+- **node-level feature** はサンプルの遺伝子-値表現（摂動シグネチャ、疾患シグネチャ、発現プロファイル）。
   データセット単位のテーブルなので、複数タスクが同じ表を共有できます。
-- **task** は1つの二値予測問題。channel を局所名（alias）に束ね、サンプルから行への写像を持ちます。
+- **task** は1つの二値予測問題。node-level feature を局所名（alias）に束ね、サンプルから行への写像を持ちます。
   同じ問題を別サンプル集合に定義したタスク（1year…5year）は同じ alias を使うため、
   モデル設定がそのまま流用できます。
 - **groups** はサンプル単位のグループ（がん種、対象疾患）。グループ別AUCや帰属の集計に使われます。
-- **covariates** は密な共変量ベクトル（がん種one-hot）。
+- **sample-level feature** はサンプル単位の密ベクトル（がん種 one-hot、変異スペクトル、
+  化合物フィンガープリントなど、遺伝子に紐づかない特徴量）。
 
 ## 設計
 
 1. PathwayCommons の13種の関係ごとに GINConv を適用し、関係別出力を加算する。
 2. DistMult スコアと負例ノード置換によりエッジ予測を事前学習する。
-3. 各 channel を遺伝子軸で集約し、共変量分岐と連結してサンプルごとに二値分類する。
+3. 各 node-level feature を遺伝子軸で集約し、sample-level feature の分岐と連結して
+   サンプルごとに二値分類する。
 4. accuracy、ROC-AUC、precision、recall、F1 を保存する。
 
 サンプルレベルのヘッド `SampleLevelModel` は1つで両データセットを表現します。`block: paper`
 （Linear-ELU-BN-Linear-ELU-BN）が論文のがん生存アーキテクチャ、`block: plain`
-（Linear-ELU-Dropout-Linear）が target repositioning のブロックです。dense channel は
-`reshape().sum()`、sparse channel は `index_add_` で集約し、いずれも遺伝子軸の総和になります。
+（Linear-ELU-Dropout-Linear）が target repositioning のブロックです。dense node-level feature は
+`reshape().sum()`、sparse node-level feature は `index_add_` で集約し、いずれも遺伝子軸の総和になります。
 
 グラフ事前学習では、各 DDP rank が同一の関係グラフ上で異なる正例・負例エッジをサンプリングし、勾配を all-reduce します。グローバルバッチサイズは
 `WORLD_SIZE × training.batch_size` です。
@@ -145,7 +147,7 @@ inhibitory_target_disease.tsv
 activatory_target_disease.tsv
 ```
 
-生成物は channel（`disease`, `perturbation_kd`, `perturbation_oe`）、task（`kd_inh`, `oe_act`）、
+生成物は node-level feature（`disease`, `perturbation_kd`, `perturbation_oe`）、task（`kd_inh`, `oe_act`）、
 および件数と除外行を記録した `dataset.json` / `task.json` です。
 
 ## グラフ事前学習
@@ -212,7 +214,7 @@ pathwaygnn cv --config configs/cancer/cv.yaml    # 5年 × 4 variant（Table 1�
 
 ### Integrated Gradients（`ig`）
 
-`ig` もデータセット非依存です。グラフノード埋め込み、各 channel の値、共変量に対する帰属を計算し、
+`ig` もデータセット非依存です。グラフノード埋め込み、各 node-level feature の値、sample-level featureに対する帰属を計算し、
 データセット自身のノード名でランキングを書き出します。
 
 ```bash
@@ -220,7 +222,7 @@ pathwaygnn ig --config configs/tr/ig_kd_inh.yaml        # kd_inh の fold を帰
 pathwaygnn ig --config configs/cancer/ig.yaml    # 5年 gnn_dnn_cancer の fold 0
 ```
 
-`top_graph_nodes.tsv`、`top_channel_<alias>.tsv`、`attributions.npz`、`ig_summary.json` を生成し、
+`top_graph_nodes.tsv`、`top_node_feature_<alias>.tsv`、`attributions.npz`、`ig_summary.json` を生成し、
 `per_group_rankings: true` のときはグループ別のノードランキングも出力します（次数とIGの
 Pearson相関も記録します）。
 
@@ -286,9 +288,9 @@ bash scripts/cdr/prepare.sh          # data_cdr/processed/full_features -> data_
 
 サンプルは *(細胞株, 化合物)* の組で、汎用形式へは次のように写像されます。
 
-- channel `mutation`（sparse）: 細胞株の Cancer Gene Census 遺伝子ごとの変異数。プロファイルは
+- node-level feature `mutation`（sparse）: 細胞株の Cancer Gene Census 遺伝子ごとの変異数。プロファイルは
   細胞株にしか依存しないため、107,418サンプルは760行を `rows/mutation.npy` 経由で共有します。
-- covariates: GraphCDRScan のサンプル特徴量そのまま（96/78/83変異スペクトル、原発部位one-hot、
+- sample-level features: GraphCDRScan のサンプル特徴量そのまま（96/78/83変異スペクトル、原発部位one-hot、
   3×1024ビット化合物フィンガープリント＝3,348次元）。
 - groups: 原発部位（19種）。グループ別AUCはがん種別AUCになります。
 - task: `LN_IC50` の二値化。`sensitive_drugwise`（同一化合物の中央値で分割＝細胞株のゲノムだけが
@@ -300,7 +302,7 @@ bash scripts/cdr/prepare.sh          # data_cdr/processed/full_features -> data_
 bash scripts/cdr/reproduce.sh        # pretrain / cv / finetune / benchmark / ig / report
 ```
 
-`cv` はグラフ有無 × 共変量有無の2因子アブレーション（`mlp`, `mlp_cov`, `gnn_mlp`, `gnn_mlp_cov`）
+`cv` はグラフ有無 × sample-level feature有無の2因子アブレーション（`mlp`, `mlp_cov`, `gnn_mlp`, `gnn_mlp_cov`）
 です。結果は `outputs/cdr/report/` と、同一内容の
 [`docs/cdr_report.md`](docs/cdr_report.md) / [`docs/cdr_report.html`](docs/cdr_report.html)
 に生成されます。
@@ -318,7 +320,7 @@ YAML の `defaults` は現在の設定ファイルからの相対パスです。
 - `model.block`, `model.batch_norm`: サンプルレベルヘッドの構造
 - `training.batch_size`: rank ごとの事前学習エッジ数、またはサンプル数
 - `training.train_encoder` / `training.end_to_end`: グラフ encoder も更新するか
-- `variants[].use_graph`, `variants[].use_covariates`: `cv` のアブレーション条件
+- `variants[].use_graph`, `variants[].use_sample_features`: `cv` のアブレーション条件
 
 fold の seed は `seed + task.seed_offset * 1000 + fold + variant.seed_index * 100` です。
 `seed_offset` はタスク（がんでは検証年）が持ち、`seed_index` は variant が持つため、
@@ -331,7 +333,7 @@ conda run -n gnn python -m pytest
 ```
 
 テストは小さな raw データと合成データセットを生成し、前処理、汎用形式の読み書き、関係別 GIN、
-エッジ事前学習、dense/sparse channel の等価性、可変長サンプル集約、逆伝播、層化分割、
+エッジ事前学習、dense/sparse node-level feature の等価性、可変長サンプル集約、逆伝播、層化分割、
 `cv` グリッドと fold 再開、`ig` の出力を検証します。
 
 ## Git

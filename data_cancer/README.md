@@ -222,13 +222,13 @@ bash scripts/cancer/reproduce_paper.sh build-processed   # ①（生データか
 bash scripts/cancer/reproduce_paper.sh prepare           # ②
 ```
 
-②は3列ロング形式の TSV（合計 4.2 GB、約1分半）を `prepared/channels/expression_<n>year/` の
+②は3列ロング形式の TSV（合計 4.2 GB、約1分半）を `prepared/node_features/expression_<n>year/` の
 memmap 行列へ流し込み、年ごとに `prepared/tasks/<n>year/` を作り、年別サンプル数を
 論文の Supplementary Table 1 と照合します。既存行列の形状が一致していれば変換をスキップします。
 
-生成結果: ノード 30,918 / 関係 13 / 有向エッジ 3,673,654、dense channel
+生成結果: ノード 30,918 / 関係 13 / 有向エッジ 3,673,654、dense node-level feature
 `expression_1year`〜`expression_5year`（各 4,448 遺伝子）、task `1year`〜`5year`
-（9,484 / 7,308 / 5,915 / 5,036 / 4,492 サンプル）。共変量とグループはがん種（33種）。
+（9,484 / 7,308 / 5,915 / 5,036 / 4,492 サンプル）。sample-level featureとグループはがん種（33種）。
 
 ①で作り直したバンドルを使う場合は、年別サンプル数が数件ずれるため
 `configs/cancer/prepare.yaml` の `strict_sample_counts` を `false` にしてください。

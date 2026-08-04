@@ -72,7 +72,7 @@ def test_prepare_writes_a_generic_dataset(tmp_path: Path) -> None:
     assert (manifest["num_nodes"], manifest["num_relations"]) == (3, 2)
     assert manifest["num_edges"] == 4  # both directions of both edges
     assert manifest["source"]["disease_rows_skipped"] == 1
-    assert sorted(manifest["channels"]) == ["disease", "perturbation_kd", "perturbation_oe"]
+    assert sorted(manifest["node_features"]) == ["disease", "perturbation_kd", "perturbation_oe"]
     assert manifest["tasks"] == ["kd_inh", "oe_act"]
 
     dataset = GraphDataset.open(prepared, "tr")
@@ -80,12 +80,12 @@ def test_prepare_writes_a_generic_dataset(tmp_path: Path) -> None:
     assert dataset.relation_names() == ["activates", "binds"]
     task = dataset.task("kd_inh")
     # Both tasks expose the same aliases, so a model config transfers between them.
-    assert task.channel_names == dataset.task("oe_act").channel_names == ("perturbation", "disease")
-    assert [channel.source for channel in task.channels] == ["perturbation_kd", "disease"]
+    assert task.node_feature_names == dataset.task("oe_act").node_feature_names == ("perturbation", "disease")
+    assert [node_feature.source for node_feature in task.node_features] == ["perturbation_kd", "disease"]
     assert task.num_samples == 4 and task.manifest["source"]["label_rows_skipped"] == 1
     assert task.manifest["source"]["num_perturbations"] == 2
     assert task.group_names == ("D1", "D2")
-    assert task.covariate_dim == 0
+    assert task.sample_feature_dim == 0
     assert task.seed_offset == 0 and dataset.task("oe_act").seed_offset == 1
     assert json.loads((prepared / "tasks/kd_inh/task.json").read_text())["num_positive"] == 2
 
@@ -107,9 +107,9 @@ def test_prepared_samples_feed_the_models(tmp_path: Path) -> None:
     data = TaskDataset(task)
     batch = data.collate()([data[0], data[1]])
     # The disease signature is shared, the perturbation table is per task.
-    assert batch.channels["perturbation"].kind == "sparse"
-    assert batch.covariate is None
-    logits = SampleLevelModel(task.channel_names, embedding_dim=8, hidden_dim=8)(
+    assert batch.node_features["perturbation"].kind == "sparse"
+    assert batch.sample_feature is None
+    logits = SampleLevelModel(task.node_feature_names, embedding_dim=8, hidden_dim=8)(
         batch, encoder(edge_index, edge_type)
     )
     assert logits.shape == (2,)

@@ -175,9 +175,9 @@ bash scripts/tr/prepare.sh
 | 除外された疾患シグネチャ行 | 10,431 |
 | 除外されたランドマーク遺伝子 | 2（グラフに無い） |
 
-**channel（データセット単位の遺伝子-値テーブル、すべて sparse）**
+**node-level feature（データセット単位の遺伝子-値テーブル、すべて sparse）**
 
-| channel | 行数 | 非ゼロ値数 | 内容 |
+| node-level feature | 行数 | 非ゼロ値数 | 内容 |
 | --- | --- | --- | --- |
 | `disease` | 177 | 175,975 | 疾患シグネチャ。**2タスクで共有** |
 | `perturbation_kd` | 33,817 | 32,999,370 | ノックダウン（遺伝子 × 細胞株） |
@@ -185,14 +185,14 @@ bash scripts/tr/prepare.sh
 
 **task**
 
-| task | サンプル数 | 陽性数 | ラベル行 | 除外ラベル行 | alias → channel |
+| task | サンプル数 | 陽性数 | ラベル行 | 除外ラベル行 | alias → node-level feature |
 | --- | --- | --- | --- | --- | --- |
 | `kd_inh` | 61,101 | 5,013 | 6,913 | 255 | `perturbation`→`perturbation_kd`, `disease`→`disease` |
 | `oe_act` | 3,465 | 294 | 450 | 0 | `perturbation`→`perturbation_oe`, `disease`→`disease` |
 
 両タスクとも **alias は `perturbation` と `disease` で共通**なので、モデル設定がそのまま
 流用できます。`groups` はサンプルが対象とする疾患（177種）で、疾患別 AUC と疾患別帰属の
-集計に使われます。共変量はありません（`use_covariates: true` の variant は使えません）。
+集計に使われます。sample-level featureはありません（`use_sample_features: true` の variant は使えません）。
 
 ---
 
@@ -212,7 +212,7 @@ pathwaygnn ig        --config configs/tr/ig_oe_act.yaml
 pathwaygnn-data tr-report --config configs/tr/report.yaml
 ```
 
-`cv` のアブレーションは共変量がないため2条件（`mlp` / `gnn_mlp`）です。
+`cv` のアブレーションはsample-level featureがないため2条件（`mlp` / `gnn_mlp`）です。
 
 ---
 

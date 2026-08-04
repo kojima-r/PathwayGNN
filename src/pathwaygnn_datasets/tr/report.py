@@ -91,12 +91,12 @@ def _fold_pos_weights(cv_dir: Path) -> list[float]:
     return [float(value) for value in values if value is not None]
 
 
-def _channel_lengths(dataset: GraphDataset) -> dict[str, np.ndarray]:
-    """Non-zero genes per row of every sparse channel, keyed by dataset channel."""
+def _node_feature_lengths(dataset: GraphDataset) -> dict[str, np.ndarray]:
+    """Non-zero genes per row of every sparse node-level feature, keyed by its table."""
     lengths = {}
-    for source, entry in dataset.manifest["channels"].items():
+    for source, entry in dataset.manifest["node_features"].items():
         if entry["kind"] == "sparse":
-            lengths[source] = np.diff(np.asarray(dataset.channel(source).csr()[0]))
+            lengths[source] = np.diff(np.asarray(dataset.node_feature(source).csr()[0]))
     return lengths
 
 
@@ -146,7 +146,7 @@ def _plots(
         axes[1].hist(values, bins=40, histtype="step", lw=1.6,
                      label=f"{name} ({values.size} rows)")
     axes[1].set(xlabel="Non-zero genes per signature row", ylabel="Rows (log)", yscale="log",
-                title="Signature length distribution per channel")
+                title="Signature length distribution per node_feature")
     axes[1].legend(fontsize=8)
     save(fig, "dataset_composition.png")
 
@@ -349,36 +349,36 @@ def run_tr_report(cfg: dict[str, Any]) -> dict[str, Any]:
 
     # --- dataset audit -----------------------------------------------------
     audit: dict[str, dict[str, Any]] = {}
-    lengths = _channel_lengths(dataset)
+    lengths = _node_feature_lengths(dataset)
     audit_rows = []
     for name in tasks:
         task = dataset.task(name)
         labels = task.labels()
         groups = np.asarray(task.groups()) if task.groups() is not None else None
         source = task.manifest.get("source", {})
-        channel_sizes = {
-            channel.name: dataset.manifest["channels"][channel.source]
-            for channel in task.channels
+        node_feature_sizes = {
+            node_feature.name: dataset.manifest["node_features"][node_feature.source]
+            for node_feature in task.node_features
         }
         audit[name] = {
             "num_samples": int(labels.size),
             "num_positive": int(labels.sum()),
             "positive_ratio": float(labels.mean()),
             "diseases_used": int(np.unique(groups).size) if groups is not None else 0,
-            "channels": channel_sizes,
+            "node_features": node_feature_sizes,
             "source": source,
         }
         audit_rows.append([
             name, int(labels.size), int(labels.sum()), float(labels.mean()),
             source.get("num_perturbations", ""), audit[name]["diseases_used"],
             len(task.group_names),
-            *[int(np.mean(lengths[channel.source])) if channel.source in lengths else ""
-              for channel in task.channels],
+            *[int(np.mean(lengths[node_feature.source])) if node_feature.source in lengths else ""
+              for node_feature in task.node_features],
             source.get("signature_genes_skipped", ""), source.get("label_rows_skipped", ""),
         ])
     audit_header = ["task", "samples", "positive", "positive_ratio", "perturbations",
                     "diseases_used", "diseases_total",
-                    *[f"mean_genes_{channel.name}" for channel in dataset.task(tasks[0]).channels],
+                    *[f"mean_genes_{node_feature.name}" for node_feature in dataset.task(tasks[0]).node_features],
                     "signature_genes_skipped", "label_rows_skipped"]
     tsv(output / "dataset_audit.tsv", audit_header, audit_rows)
 
@@ -497,7 +497,7 @@ def run_tr_report(cfg: dict[str, Any]) -> dict[str, Any]:
     # --- attributions -------------------------------------------------------
     node_names = dataset.node_names()
     attributions: dict[str, dict[str, Any]] = {}
-    ig_rows, channel_rows = [], []
+    ig_rows, node_feature_rows = [], []
     for name in tasks:
         candidates = sorted(ig_dir.glob(f"{name}_fold*"))
         summary = _read(candidates[0] / "ig_summary.json") if candidates else None
@@ -521,18 +521,18 @@ def run_tr_report(cfg: dict[str, Any]) -> dict[str, Any]:
             for rank, node in enumerate(entry["top_nodes"], start=1):
                 ig_rows.append([name, rank, node[0], node[1], node[2], node[3]])
         for key in arrays.files:
-            if not key.startswith("channel_"):
+            if not key.startswith("node_feature_"):
                 continue
             score = arrays[key]
             order = np.argsort(np.abs(score))[::-1][:top_k]
             for rank, index in enumerate(order, start=1):
-                channel_rows.append([name, key.removeprefix("channel_"), rank, int(index),
+                node_feature_rows.append([name, key.removeprefix("node_feature_"), rank, int(index),
                                      node_names[int(index)], float(score[index])])
         attributions[name] = entry
     tsv(output / "ig_top_graph_nodes.tsv",
         ["task", "rank", "node_index", "node", "ig_l2", "degree"], ig_rows)
-    tsv(output / "ig_top_channel_genes.tsv",
-        ["task", "channel", "rank", "node_index", "node", "signed_ig"], channel_rows)
+    tsv(output / "ig_top_node_feature_genes.tsv",
+        ["task", "node_feature", "rank", "node_index", "node", "signed_ig"], node_feature_rows)
 
     pretrain_history = _read(Path(cfg.get("pretrain_history", "outputs/tr/pretrain/history.json")))
     made = _plots(output, docs / assets_name, tasks, all_variants, audit, conditions, pooled, per_disease,
@@ -588,7 +588,7 @@ def run_tr_report(cfg: dict[str, Any]) -> dict[str, Any]:
         for name in attributions
         for rank, node in enumerate(attributions[name].get("top_nodes", [])[:top_diseases], start=1)
     ]
-    channel_table = [[*row[:3], *row[4:]] for row in channel_rows if row[2] <= 10]
+    node_feature_table = [[*row[:3], *row[4:]] for row in node_feature_rows if row[2] <= 10]
     md = f"""# {TITLE}
 
 ## What this report covers
@@ -608,8 +608,8 @@ attribution runs on fold 0 of the graph variant, and holdout fine-tuning uses it
 {mdtable(audit_header, audit_rows)}
 
 `diseases_used` counts the diseases that actually appear in a task's labels, out of
-`diseases_total` in the shared disease channel. The `mean_genes_*` columns are the mean number of
-non-zero genes per row of each channel after the 1e-7 cutoff.
+`diseases_total` in the shared disease table. The `mean_genes_*` columns are the mean number of
+non-zero genes per row of each node-level feature after the 1e-7 cutoff.
 
 ## Cross-validation (`pathwaygnn cv`)
 
@@ -657,9 +657,9 @@ The full table for every disease is in `{output}/per_disease_auc.tsv`.
 
 {mdtable(["task", "rank", "node", "ig_l2", "degree"], ig_table)}
 
-Top 10 attributed genes per channel:
+Top 10 attributed genes per node-level feature:
 
-{mdtable(["task", "channel", "rank", "node", "signed_ig"], channel_table)}
+{mdtable(["task", "node_feature", "rank", "node", "signed_ig"], node_feature_table)}
 
 Degree/attribution Pearson correlation:
 {', '.join(f"{name} r={attributions[name]['pearson_r']:.3f} "
@@ -670,7 +670,7 @@ Degree/attribution Pearson correlation:
 Attribution mass concentrates on the highest-degree nodes, and the top of the ranking is dominated
 by PathwayCommons chemical entities (`CHEBI:*`) rather than genes — the same degree-driven pattern
 the cancer reproduction reports. Read the ranking as where the encoder puts its mass, not as
-evidence of a disease-specific mechanism; the per-channel table below is the gene-level view.
+evidence of a disease-specific mechanism; the per-feature table below is the gene-level view.
 
 ## Plots
 

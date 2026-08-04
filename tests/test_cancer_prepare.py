@@ -68,7 +68,7 @@ def test_prepare_cancer_dataset(tmp_path: Path, monkeypatch) -> None:
     )
     assert manifest["name"] == "cancer"
     assert manifest["num_nodes"] == 3 and manifest["num_relations"] == 2
-    assert manifest["channels"]["expression_1year"]["kind"] == "dense"
+    assert manifest["node_features"]["expression_1year"]["kind"] == "dense"
     dataset = GraphDataset.open(tmp_path / "prepared", "cancer")
     # Edge order is taken verbatim from graph.tsv so that pre-training stays reproducible.
     edge_index, edge_type = dataset.graph()
@@ -76,11 +76,11 @@ def test_prepare_cancer_dataset(tmp_path: Path, monkeypatch) -> None:
     assert edge_type.tolist() == [0, 1, 0]
     assert dataset.node_names() == ["11998", "1636", "25225"]
     task = dataset.task("1year")
-    assert task.channel_names == ("expression",)
-    assert task.channels[0].source == "expression_1year"
+    assert task.node_feature_names == ("expression",)
+    assert task.node_features[0].source == "expression_1year"
     assert task.seed_offset == 1  # the verification year, not the task position
-    assert task.covariate_names == tuple(CANCER_TYPES)
-    assert task.rows("expression") is None  # one channel row per sample
+    assert task.sample_feature_names == tuple(CANCER_TYPES)
+    assert task.rows("expression") is None  # one feature row per sample
     assert task.num_samples == samples
     assert task.manifest["source"]["death"] == samples // 2
     assert np.array_equal(np.asarray(task.groups()), np.arange(samples))

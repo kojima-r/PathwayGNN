@@ -260,14 +260,14 @@ bash scripts/cdr/prepare.sh
 検査して `dataset.json` の `graph_symmetric` に記録します（実データでは `true`、
 自己ループ・重複ともに 0 件）。
 
-### 6.2 channel `mutation`（sparse）
+### 6.2 node-level feature `mutation`（sparse）
 
 1行1変異の `node_features.tsv` を **(サンプル, 遺伝子) ごとの変異数**に集約します。
 GDSC のサンプルは *(細胞株, 化合物)* の組なので、同じ細胞株に対して試された化合物の数だけ
 同一の変異プロファイルが繰り返されます。そこで**プロファイルの内容でハッシュして重複排除**し、
 `rows/mutation.npy` でサンプル → 行を写像します。
 
-| | 変換前（`node_features.tsv`） | 変換後（channel `mutation`） |
+| | 変換前（`node_features.tsv`） | 変換後（node-level feature `mutation`） |
 | --- | --- | --- |
 | 行の意味 | 1変異（サンプルあたり平均 254 行） | 1変異プロファイル |
 | 行数 | 27,309,391 | **760**（＝細胞株数） |
@@ -278,13 +278,13 @@ GDSC のサンプルは *(細胞株, 化合物)* の組なので、同じ細胞�
 
 > **設計上の割り切り**: サンプルレベルヘッドは遺伝子ごとに **スカラー1つ**しか射影しないため、
 > 上流の21次元ノード特徴（変異タイプ、座標エンコード）は変異数に縮約されます。
-> 変異タイプ・座標の情報はサンプルレベルの変異スペクトル（共変量側）に部分的に残ります。
+> 変異タイプ・座標の情報はサンプルレベルの変異スペクトル（sample-level feature 側）に部分的に残ります。
 
-### 6.3 covariates
+### 6.3 sample-level features
 
 `sample_features.tsv` の**サンプル ID とがん種コードを除いた残り全部**、
 すなわち 3,348 次元（スペクトル 257 + 部位 one-hot 19 + フィンガープリント 3,072）を
-そのまま共変量にします。名前は `spectra96_*` / `spectra78_*` / `spectra83_*` /
+そのまま sample-level feature にします。名前は `spectra96_*` / `spectra78_*` / `spectra83_*` /
 `site_<部位名>` / `fingerprint_*` と付き、IG の出力がそのまま読めます。
 
 書き出しはタスクあたり 1.4 GB になるため、一時 memmap 経由でストリーム書き込みします。
@@ -342,8 +342,8 @@ GDSC のサンプルは *(細胞株, 化合物)* の組なので、同じ細胞�
 | 関係タイプ数 | 356 |
 | 有向エッジ数 | 536,274 |
 | サンプル数 | 107,418（760 細胞株 × 168 化合物の一部） |
-| channel | `mutation`（sparse、760 行 / 117,880 値） |
-| covariates | 3,348 次元 |
+| node-level feature | `mutation`（sparse、760 行 / 117,880 値） |
+| sample-level features | 3,348 次元 |
 | groups | 原発部位 19 種 |
 | tasks | `sensitive_drugwise`, `sensitive_global` |
 
@@ -412,8 +412,8 @@ Random Forest は木数 60・深さ 12 に制限してあります。これは�
 
 読み方の注意:
 
-- **グラフの寄与は共変量なしの条件でしか見えません。** `sensitive_drugwise` で
-  +0.035（0.516 → 0.551）、共変量を入れると +0.004 に縮みます。
+- **グラフの寄与はsample-level feature なしの条件でしか見えません。** `sensitive_drugwise` で
+  +0.035（0.516 → 0.551）、sample-level feature を入れると +0.004 に縮みます。
 - **2つのタスクは構造的に難易度が違います。** 互いの AUC を比べても、モデルではなく
   ラベル定義の話にしかなりません。
 - **fold はサンプル単位のランダム分割で、細胞株単位でも化合物単位でもありません。**

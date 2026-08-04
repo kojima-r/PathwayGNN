@@ -32,10 +32,10 @@ training:
   selection: final_epoch
   resume: true
 
-# Same four ablations as the cancer grid; `use_covariates` is unavailable here
-# because the target-repositioning tasks carry no covariates.
+# Same four ablations as the cancer grid; `use_sample_features` is unavailable here
+# because the target-repositioning tasks carry no sample_features.
 variants:
-  - {name: mlp, use_graph: false, use_covariates: false, seed_index: 0}
-  - {name: gnn_mlp, use_graph: true, use_covariates: false, seed_index: 1}
+  - {name: mlp, use_graph: false, use_sample_features: false, seed_index: 0}
+  - {name: gnn_mlp, use_graph: true, use_sample_features: false, seed_index: 1}
 
 output_dir: outputs/tr/cv

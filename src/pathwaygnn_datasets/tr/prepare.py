@@ -4,7 +4,7 @@ Reads the bundle written by ``pathwaygnn-data tr-build-processed`` — the graph
 the disease signature, the knockdown and overexpression perturbation signatures
 and the two label tables — and writes one prepared dataset:
 
-* channels ``disease``, ``perturbation_kd``, ``perturbation_oe`` (sparse)
+* node_features ``disease``, ``perturbation_kd``, ``perturbation_oe`` (sparse)
 * tasks ``kd_inh`` and ``oe_act``, each binding the alias ``perturbation`` to its
   own signature table and sharing the single ``disease`` table
 * groups: the disease each sample targets, so that downstream per-group metrics
@@ -27,7 +27,7 @@ from typing import Any, Iterable
 import numpy as np
 import torch
 
-from pathwaygnn.data.format import DatasetWriter, TaskChannel
+from pathwaygnn.data.format import DatasetWriter, TaskNodeFeature
 
 SOURCE_FILES = {
     "graph": ("graph.tsv", "PathwayCommons12.All.hgnc.sif", "PathwayCommons12.All.hgnc.sif.tsv"),
@@ -194,25 +194,25 @@ def prepare_tr_dataset(
     disease_names, disease_values, disease_skipped = _read_disease(
         paths["disease"], gene_to_idx, cutoff
     )
-    writer.sparse_channel("disease", *_pack(disease_names, disease_values))
+    writer.sparse_node_feature("disease", *_pack(disease_names, disease_values))
     writer.source.update(
         {"num_diseases": len(disease_names), "disease_rows_skipped": disease_skipped}
     )
 
-    for task_name, signature_key, label_key, channel in TASKS:
+    for task_name, signature_key, label_key, node_feature in TASKS:
         pert_names, pert_values, genes_skipped, by_gene = _read_signature(
             paths[signature_key], gene_to_idx, cutoff
         )
-        writer.sparse_channel(channel, *_pack(pert_names, pert_values))
+        writer.sparse_node_feature(node_feature, *_pack(pert_names, pert_values))
         pert, disease, label, labels_skipped, label_rows = _read_labels(
             paths[label_key], pert_names, disease_names, by_gene
         )
         writer.write_task(
             task_name,
             label,
-            channels={
-                "perturbation": TaskChannel(channel, pert),
-                "disease": TaskChannel("disease", disease),
+            node_features={
+                "perturbation": TaskNodeFeature(node_feature, pert),
+                "disease": TaskNodeFeature("disease", disease),
             },
             groups=disease,
             group_names=disease_names,

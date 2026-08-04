@@ -1,23 +1,23 @@
 from .format import (
-    Channel,
+    NodeFeature,
     DatasetWriter,
     GraphDataset,
     Task,
-    TaskChannel,
+    TaskNodeFeature,
     open_dataset,
     open_task,
 )
-from .samples import ChannelBatch, Collate, SampleBatch, TaskDataset
+from .samples import NodeFeatureBatch, Collate, SampleBatch, TaskDataset
 
 __all__ = [
-    "Channel",
-    "ChannelBatch",
+    "NodeFeature",
+    "NodeFeatureBatch",
     "Collate",
     "DatasetWriter",
     "GraphDataset",
     "SampleBatch",
     "Task",
-    "TaskChannel",
+    "TaskNodeFeature",
     "TaskDataset",
     "open_dataset",
     "open_task",

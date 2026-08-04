@@ -41,7 +41,7 @@ def main() -> int:
             cfg = deepcopy(base)
             cfg["dataset"] = {**base["dataset"], "tasks": ["5year"]}
             cfg["variants"] = [{
-                "name": "gnn_dnn", "use_graph": True, "use_covariates": False,
+                "name": "gnn_dnn", "use_graph": True, "use_sample_features": False,
                 "seed_index": 2, "end_to_end": end_to_end,
             }]
             cfg["pretrained_checkpoint"] = str(checkpoint)

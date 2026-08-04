@@ -19,10 +19,10 @@ PAPER_TABLE1 = {
 # ``seed_index`` pins the per-variant seed offset so that a run of a single
 # condition reproduces the seed it would get inside the full grid.
 PAPER_VARIANTS = [
-    {"name": "dnn", "use_graph": False, "use_covariates": False, "seed_index": 0},
-    {"name": "dnn_cancer", "use_graph": False, "use_covariates": True, "seed_index": 1},
-    {"name": "gnn_dnn", "use_graph": True, "use_covariates": False, "seed_index": 2},
-    {"name": "gnn_dnn_cancer", "use_graph": True, "use_covariates": True, "seed_index": 3},
+    {"name": "dnn", "use_graph": False, "use_sample_features": False, "seed_index": 0},
+    {"name": "dnn_cancer", "use_graph": False, "use_sample_features": True, "seed_index": 1},
+    {"name": "gnn_dnn", "use_graph": True, "use_sample_features": False, "seed_index": 2},
+    {"name": "gnn_dnn_cancer", "use_graph": True, "use_sample_features": True, "seed_index": 3},
 ]
 VARIANT_NAMES = [item["name"] for item in PAPER_VARIANTS]
 DISPLAY = {

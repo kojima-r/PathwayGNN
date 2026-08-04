@@ -264,4 +264,4 @@ pathwaygnn ig        --config configs/tr/ig_kd_inh.yaml
 pathwaygnn-data tr-report --config configs/tr/report.yaml
 ```
 
-共変量が無いため `cv` のアブレーションは2条件（`mlp` / `gnn_mlp`）です。
+sample-level featureが無いため `cv` のアブレーションは2条件（`mlp` / `gnn_mlp`）です。

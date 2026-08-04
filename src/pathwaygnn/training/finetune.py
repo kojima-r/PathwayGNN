@@ -16,7 +16,7 @@ from pathwaygnn.data.format import open_task
 from pathwaygnn.data.samples import TaskDataset
 from pathwaygnn.models.encoder import RelationalGIN, load_encoder
 from pathwaygnn.models.predictor import SampleLevelModel, build_model
-from pathwaygnn.training.cv import normalize_covariates, standardizer
+from pathwaygnn.training.cv import normalize_sample_features, standardizer
 from pathwaygnn.training.metrics import binary_metrics
 
 
@@ -58,7 +58,7 @@ def _evaluate(
     with torch.no_grad():
         embeddings = None if encoder is None else encoder(*graph)  # type: ignore[misc]
         for batch in loader:
-            batch = normalize_covariates(batch.to(device), mean, std)
+            batch = normalize_sample_features(batch.to(device), mean, std)
             output = predictor(batch, embeddings)
             loss = torch.nn.functional.binary_cross_entropy_with_logits(output, batch.label)
             logits.append(output.cpu())
@@ -102,12 +102,12 @@ def run_finetuning(cfg: dict[str, Any]) -> dict[str, float]:
         graph = (edge_index.to(device), edge_type.to(device))
         embedding_dim = encoder.hidden_dim
     predictor = build_model(
-        task.channel_names,
-        task.covariate_dim,
+        task.node_feature_names,
+        task.sample_feature_dim,
         embedding_dim,
         model_cfg,
         use_graph,
-        bool(variant.get("use_covariates", False)),
+        bool(variant.get("use_sample_features", False)),
     ).to(device)
     train_encoder = use_graph and bool(training.get("train_encoder", False))
     if encoder is not None:
@@ -120,7 +120,7 @@ def run_finetuning(cfg: dict[str, Any]) -> dict[str, float]:
         lr=float(training.get("learning_rate", 1e-3)),
         weight_decay=float(training.get("weight_decay", 1e-4)),
     )
-    mean, std = standardizer(task.covariates(), train_idx, device)
+    mean, std = standardizer(task.sample_features(), train_idx, device)
     positive = float(data.targets[train_idx].sum())
     negative = train_idx.size - positive
     pos_weight = torch.tensor(negative / max(positive, 1.0), device=device)
@@ -139,7 +139,7 @@ def run_finetuning(cfg: dict[str, Any]) -> dict[str, float]:
             else None
         )
         for batch in train_loader:
-            batch = normalize_covariates(batch.to(device), mean, std)
+            batch = normalize_sample_features(batch.to(device), mean, std)
             optimizer.zero_grad(set_to_none=True)
             embeddings = cached
             if encoder is not None and train_encoder:
@@ -165,8 +165,8 @@ def run_finetuning(cfg: dict[str, Any]) -> dict[str, float]:
                     "dataset": dataset.name,
                     "task": task.name,
                     "pretrained_checkpoint": cfg.get("pretrained_checkpoint"),
-                    "covariate_mean": None if mean is None else mean.detach().cpu(),
-                    "covariate_std": None if std is None else std.detach().cpu(),
+                    "sample_feature_mean": None if mean is None else mean.detach().cpu(),
+                    "sample_feature_std": None if std is None else std.detach().cpu(),
                     "epoch": epoch,
                 },
                 output_dir / "best.pt",

@@ -299,7 +299,7 @@ bash scripts/cancer/reproduce_paper.sh prepare
    を検証し、崩れていればその位置を示して失敗します。
    **既存の `matrix.npy` の形状が一致していれば変換をスキップ**するので、再実行は安価です。
 3. **タスク生成** — 年ごとに `labels` と `sample` をサンプル ID でソートしてから、
-   ラベル・共変量（がん種 one-hot 33次元）・グループ（がん種コード）を書き出します。
+   ラベル・sample-level feature（がん種 one-hot 33次元）・グループ（がん種コード）を書き出します。
 4. `seed_offset` にはその年（1〜5）を入れます。これにより
    「何年分を含む実行か」に依存せず fold seed が決まります。
 
@@ -316,9 +316,9 @@ bash scripts/cancer/reproduce_paper.sh prepare
 | 有向エッジ数 | 3,673,654 |
 | 遺伝子数（dense 行列の列） | 4,448 |
 
-**channel（すべて dense、memmap）**
+**node-level feature（すべて dense、memmap）**
 
-| channel | 行数 | 列数 |
+| node-level feature | 行数 | 列数 |
 | --- | --- | --- |
 | `expression_1year` | 9,484 | 4,448 |
 | `expression_2year` | 7,308 | 4,448 |
@@ -328,7 +328,7 @@ bash scripts/cancer/reproduce_paper.sh prepare
 
 **task**
 
-| task | サンプル数 | 生存（陽性） | 死亡 | alias → channel |
+| task | サンプル数 | 生存（陽性） | 死亡 | alias → node-level feature |
 | --- | --- | --- | --- | --- |
 | `1year` | 9,484 | 8,408 | 1,076 | `expression`→`expression_1year` |
 | `2year` | 7,308 | 5,357 | 1,951 | `expression`→`expression_2year` |
@@ -337,7 +337,7 @@ bash scripts/cancer/reproduce_paper.sh prepare
 | `5year` | 4,492 | 1,570 | 2,922 | `expression`→`expression_5year` |
 
 5タスクとも **alias は `expression` で共通**なので、モデル設定が相互に流用できます。
-共変量はがん種 one-hot（33次元）、グループもがん種です。
+sample-level featureはがん種 one-hot（33次元）、グループもがん種です。
 年が進むほど陽性率が下がり（1年 88.7% → 5年 34.9%）、タスクの難易度が変わります。
 
 ---

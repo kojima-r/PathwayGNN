@@ -130,15 +130,15 @@ CUDA なら NCCL、なければ Gloo。rank ごとの seed は `seed + rank`、�
 
 ```yaml
 variants:
-  - {name: mlp,         use_graph: false, use_covariates: false, seed_index: 0}
-  - {name: gnn_mlp_cov, use_graph: true,  use_covariates: true,  seed_index: 3}
+  - {name: mlp,         use_graph: false, use_sample_features: false, seed_index: 0}
+  - {name: gnn_mlp_cov, use_graph: true,  use_sample_features: true,  seed_index: 3}
 ```
 
 | キー | 型 | 既定値 | 説明 |
 | --- | --- | --- | --- |
 | `name` | str | （必須） | 出力ディレクトリ名 `<output_dir>/<task>/<name>/fold_<k>/`。 |
 | `use_graph` | bool | （必須） | グラフ encoder のノード埋め込みを遺伝子の値に加算するか。 |
-| `use_covariates` | bool | `false` | 共変量分岐を使うか。タスクが共変量を持たない場合は `true` にできない。 |
+| `use_sample_features` | bool | `false` | sample-level feature の分岐を使うか。タスクが sample-level feature を持たない場合は `true` にできない。 |
 | `seed_index` | int | リスト中の位置 | seed の variant 成分。**位置ではなくこの値で決まる**ため、1条件だけ単独実行してもグリッド全体と同じ seed になる。 |
 | `end_to_end` | bool | `training.end_to_end` | variant 単位の上書き。 |
 
@@ -184,7 +184,7 @@ tr/cdr では定義順 0,1）。位置に依存しないので、グリッドの
 | --- | --- | --- | --- |
 | `split` | list[float] | `[0.7, 0.15, 0.15]` | train / valid / test の比率。ラベル層化して分割する。 |
 | `variant.use_graph` | bool | `true` | `cv` の `variants[]` と違い、こちらは**単数形 `variant:`** で1条件のみ。 |
-| `variant.use_covariates` | bool | `false` | 同上。 |
+| `variant.use_sample_features` | bool | `false` | 同上。 |
 | `model.embedding_dim` | int | `64` | **`cv` の既定値 32 とは異なる**。グラフ使用時は encoder の `hidden_dim` で上書き。 |
 | `model.hidden_dim` / `dropout` / `batch_norm` / `block` | | `cv` と同じ | |
 | `training.epochs` | int | `100` | 上限エポック数。 |
@@ -203,8 +203,8 @@ tr/cdr では定義順 0,1）。位置に依存しないので、グリッドの
 
 ## 6. `pathwaygnn benchmark` — グラフなしベースライン
 
-`src/pathwaygnn/training/benchmark.py`。全 channel を `[samples, num_nodes]` の疎行列に展開し、
-共変量を横に連結して sklearn / XGBoost にかけます。**`cv` と同じ seed・同じ `StratifiedKFold`**
+`src/pathwaygnn/training/benchmark.py`。全 node-level feature を `[samples, num_nodes]` の疎行列に展開し、
+sample-level featureを横に連結して sklearn / XGBoost にかけます。**`cv` と同じ seed・同じ `StratifiedKFold`**
 なので fold は一致します。
 
 | キー | 型 | 既定値 | 説明 |
@@ -227,7 +227,7 @@ tr/cdr では定義順 0,1）。位置に依存しないので、グリッドの
 ## 7. `pathwaygnn ig` — Integrated Gradients
 
 `src/pathwaygnn/training/ig.py`。`cv` が保存した fold のチェックポイントを読み、
-グラフのノード埋め込み行列・各 channel の値・共変量ベクトルに対して帰属を計算します。
+グラフのノード埋め込み行列・各 node-level feature の値・sample-level feature に対して帰属を計算します。
 
 | キー | 型 | 既定値 | 説明 |
 | --- | --- | --- | --- |
@@ -243,7 +243,7 @@ tr/cdr では定義順 0,1）。位置に依存しないので、グリッドの
 | `reference` | dict | `{}` | そのまま `ig_summary.json` にコピーされる。既知の参照値（cancer では次数-IG 相関 0.727）を記録するため。 |
 
 **サンプルループが終わるまで一切書き込まない**ため、途中で止めても前回の出力は壊れません。
-出力: `top_graph_nodes.tsv`、`top_channel_<alias>.tsv`、`attributions.npz`、`ig_summary.json`。
+出力: `top_graph_nodes.tsv`、`top_node_feature_<alias>.tsv`、`attributions.npz`、`ig_summary.json`。
 
 ---
 
@@ -308,7 +308,7 @@ tr/cdr では定義順 0,1）。位置に依存しないので、グリッドの
 | --- | --- | --- | --- |
 | `source_dir` | str | （必須） | `data_cancer`。実際に読むのは `<source_dir>/processed/`。 |
 | `output_dir` | str | （必須） | |
-| `years` | list[int] | `[1,2,3,4,5]` | 変換する検証年。年ごとに channel とタスクが1つずつできる。 |
+| `years` | list[int] | `[1,2,3,4,5]` | 変換する検証年。年ごとに node-level feature とタスクが1つずつできる。 |
 | `num_genes` | int | `4448` | dense 行列の遺伝子数。実データと合わなければ失敗する。 |
 | `strict_sample_counts` | bool | `true` | 年別サンプル数を `PAPER_SAMPLE_COUNTS` と照合し、不一致なら失敗する。`cancer-build-processed` で作り直したバンドルは数件ずれるので `false` にする（警告を出して続行）。 |
 
@@ -318,7 +318,7 @@ tr/cdr では定義順 0,1）。位置に依存しないので、グリッドの
 | --- | --- | --- | --- |
 | `source_dir` | str | （必須） | GraphCDRScan の処理済みバンドル（`data_cdr/processed/full_features`）。 |
 | `output_dir` | str | （必須） | |
-| `binary_mutations` | bool | `false` | `false`: `mutation` channel の値は遺伝子ごとの変異数。`true`: 変異があれば 1.0。 |
+| `binary_mutations` | bool | `false` | `false`: `mutation` node-level feature の値は遺伝子ごとの変異数。`true`: 変異があれば 1.0。 |
 | `tasks` | list[str] | `[sensitive_drugwise, sensitive_global]` | 生成するタスク。`LN_IC50` の二値化基準が異なる（詳細は [README_data_cdr.md](README_data_cdr.md)）。 |
 
 ### `cancer-map-ids`（`configs/cancer/id_mapping.yaml`）

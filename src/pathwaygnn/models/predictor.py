@@ -1,8 +1,8 @@
-"""Sample-level head that turns channels of gene values into one logit.
+"""Sample-level head that turns node-level features of gene values into one logit.
 
-The head is dataset-agnostic: it aggregates every channel of a
+The head is dataset-agnostic: it aggregates every node_feature of a
 :class:`~pathwaygnn.data.samples.SampleBatch` over genes, concatenates the
-per-channel summaries with the optional covariate branch, and scores the result.
+per-node_feature summaries with the optional sample_feature branch, and scores the result.
 ``block="paper"`` reproduces the block used by the cancer-survival architecture
 (Linear-ELU-[BN]-Linear-ELU-[BN]); ``block="plain"`` reproduces the
 target-repositioning block (Linear-ELU-[Dropout]-Linear).
@@ -45,12 +45,12 @@ def _block(
 class SampleLevelModel(nn.Module):
     def __init__(
         self,
-        channels: Sequence[str],
+        node_features: Sequence[str],
         embedding_dim: int,
         hidden_dim: int | None = None,
-        covariate_dim: int = 0,
+        sample_feature_dim: int = 0,
         use_graph: bool = True,
-        use_covariates: bool = False,
+        use_sample_features: bool = False,
         dropout: float = 0.0,
         batch_norm: bool = False,
         block: str = "plain",
@@ -58,14 +58,14 @@ class SampleLevelModel(nn.Module):
         super().__init__()
         if block not in BLOCKS:
             raise ValueError(f"block must be one of {BLOCKS}, got {block!r}")
-        if use_covariates and covariate_dim <= 0:
-            raise ValueError("use_covariates requires a task with covariates")
-        self.channel_names = tuple(channels)
+        if use_sample_features and sample_feature_dim <= 0:
+            raise ValueError("use_sample_features requires a task that has sample-level features")
+        self.node_feature_names = tuple(node_features)
         self.embedding_dim = int(embedding_dim)
         self.hidden_dim = int(hidden_dim if hidden_dim is not None else embedding_dim)
-        self.covariate_dim = int(covariate_dim)
+        self.sample_feature_dim = int(sample_feature_dim)
         self.use_graph = bool(use_graph)
-        self.use_covariates = bool(use_covariates)
+        self.use_sample_features = bool(use_sample_features)
         self.dropout = float(dropout)
         self.batch_norm = bool(batch_norm)
         self.block = block
@@ -74,17 +74,17 @@ class SampleLevelModel(nn.Module):
         self.value_projection = _block(1, self.embedding_dim, self.dropout, self.batch_norm, activate)
         self.gene_blocks = nn.ModuleList(
             _block(self.embedding_dim, self.hidden_dim, self.dropout, self.batch_norm, activate)
-            for _ in self.channel_names
+            for _ in self.node_feature_names
         )
         self.aggregate_blocks = nn.ModuleList(
             _block(self.hidden_dim, self.hidden_dim, self.dropout, self.batch_norm, activate)
-            for _ in self.channel_names
+            for _ in self.node_feature_names
         )
-        if self.use_covariates:
-            self.covariate_block = _block(
-                self.covariate_dim, self.hidden_dim, self.dropout, self.batch_norm, activate
+        if self.use_sample_features:
+            self.sample_feature_block = _block(
+                self.sample_feature_dim, self.hidden_dim, self.dropout, self.batch_norm, activate
             )
-        parts = len(self.channel_names) + (1 if self.use_covariates else 0)
+        parts = len(self.node_feature_names) + (1 if self.use_sample_features else 0)
         output: list[nn.Module] = [nn.Linear(self.hidden_dim * parts, self.hidden_dim), nn.ELU()]
         if self.batch_norm:
             output.append(nn.BatchNorm1d(self.hidden_dim))
@@ -96,12 +96,12 @@ class SampleLevelModel(nn.Module):
     @property
     def config(self) -> dict[str, Any]:
         return {
-            "channels": list(self.channel_names),
+            "node_features": list(self.node_feature_names),
             "embedding_dim": self.embedding_dim,
             "hidden_dim": self.hidden_dim,
-            "covariate_dim": self.covariate_dim,
+            "sample_feature_dim": self.sample_feature_dim,
             "use_graph": self.use_graph,
-            "use_covariates": self.use_covariates,
+            "use_sample_features": self.use_sample_features,
             "dropout": self.dropout,
             "batch_norm": self.batch_norm,
             "block": self.block,
@@ -116,45 +116,45 @@ class SampleLevelModel(nn.Module):
             raise ValueError("node_embeddings are required when use_graph=True")
         size = batch.size
         parts = []
-        for position, name in enumerate(self.channel_names):
-            channel = batch.channels[name]
-            if channel.dense:
-                genes = channel.value.size(1)
-                values = self.value_projection(channel.value.reshape(-1, 1))
+        for position, name in enumerate(self.node_feature_names):
+            node_feature = batch.node_features[name]
+            if node_feature.dense:
+                genes = node_feature.value.size(1)
+                values = self.value_projection(node_feature.value.reshape(-1, 1))
                 if self.use_graph:
-                    values = values + node_embeddings[channel.gene].repeat(size, 1)  # type: ignore[index]
+                    values = values + node_embeddings[node_feature.gene].repeat(size, 1)  # type: ignore[index]
                 summary = self.gene_blocks[position](values).reshape(size, genes, -1).sum(dim=1)
             else:
-                values = self.value_projection(channel.value)
+                values = self.value_projection(node_feature.value)
                 if self.use_graph:
-                    values = values + node_embeddings[channel.gene]  # type: ignore[index]
+                    values = values + node_embeddings[node_feature.gene]  # type: ignore[index]
                 summary = _scatter_sum(
-                    self.gene_blocks[position](values), channel.sample, size  # type: ignore[arg-type]
+                    self.gene_blocks[position](values), node_feature.sample, size  # type: ignore[arg-type]
                 )
             parts.append(self.aggregate_blocks[position](summary))
-        if self.use_covariates:
-            if batch.covariate is None:
-                raise ValueError("the batch carries no covariates")
-            parts.append(self.covariate_block(batch.covariate))
+        if self.use_sample_features:
+            if batch.sample_feature is None:
+                raise ValueError("the batch carries no sample-level features")
+            parts.append(self.sample_feature_block(batch.sample_feature))
         return self.output(torch.cat(parts, dim=-1)).squeeze(-1)
 
 
 def build_model(
-    task_channels: Sequence[str],
-    covariate_dim: int,
+    task_node_features: Sequence[str],
+    sample_feature_dim: int,
     embedding_dim: int,
     model_cfg: dict[str, Any],
     use_graph: bool,
-    use_covariates: bool,
+    use_sample_features: bool,
 ) -> SampleLevelModel:
     """Instantiate the head from a config ``model:`` block and a variant."""
     return SampleLevelModel(
-        channels=task_channels,
+        node_features=task_node_features,
         embedding_dim=embedding_dim,
         hidden_dim=model_cfg.get("hidden_dim"),
-        covariate_dim=covariate_dim,
+        sample_feature_dim=sample_feature_dim,
         use_graph=use_graph,
-        use_covariates=use_covariates,
+        use_sample_features=use_sample_features,
         dropout=float(model_cfg.get("dropout", 0.0)),
         batch_norm=bool(model_cfg.get("batch_norm", False)),
         block=str(model_cfg.get("block", "plain")),

@@ -129,7 +129,7 @@ def test_built_bundle_feeds_cancer_prepare(tmp_path: Path) -> None:
     assert manifest["name"] == "cancer" and manifest["num_nodes"] == 4
     dataset = GraphDataset.open(tmp_path / "prepared", "cancer")
     task = dataset.task("1year")
-    assert task.num_samples == 4 and task.covariate_dim == 33
+    assert task.num_samples == 4 and task.sample_feature_dim == 33
     assert task.group_names == tuple(CANCER_TYPES)
     assert json.loads((tmp_path / "prepared/tasks/1year/task.json").read_text())["num_positive"] == 3
 

@@ -3,7 +3,7 @@ import torch
 from torch import nn
 
 from pathwaygnn.data.format import GraphDataset
-from pathwaygnn.data.samples import ChannelBatch, SampleBatch, TaskDataset
+from pathwaygnn.data.samples import NodeFeatureBatch, SampleBatch, TaskDataset
 from pathwaygnn.models.encoder import RelationalGIN, encoder_config, load_encoder
 from pathwaygnn.models.predictor import SampleLevelModel, build_model
 
@@ -15,18 +15,18 @@ def _batch(dataset: GraphDataset, size: int = 4) -> SampleBatch:
 
 @pytest.mark.parametrize("block", ["plain", "paper"])
 @pytest.mark.parametrize("use_graph", [False, True])
-@pytest.mark.parametrize("use_covariates", [False, True])
-def test_forward_and_backward(dataset: GraphDataset, block, use_graph, use_covariates) -> None:
+@pytest.mark.parametrize("use_sample_features", [False, True])
+def test_forward_and_backward(dataset: GraphDataset, block, use_graph, use_sample_features) -> None:
     task = dataset.task("main")
     encoder = RelationalGIN(dataset.num_nodes, dataset.num_relations, hidden_dim=4, dropout=0)
     embeddings = encoder(*dataset.graph())
     model = SampleLevelModel(
-        channels=task.channel_names,
+        node_features=task.node_feature_names,
         embedding_dim=4,
         hidden_dim=5,
-        covariate_dim=task.covariate_dim,
+        sample_feature_dim=task.sample_feature_dim,
         use_graph=use_graph,
-        use_covariates=use_covariates,
+        use_sample_features=use_sample_features,
         batch_norm=block == "paper",
         dropout=0.0 if block == "paper" else 0.1,
         block=block,
@@ -39,27 +39,27 @@ def test_forward_and_backward(dataset: GraphDataset, block, use_graph, use_covar
 
 def test_graph_is_required_when_declared(dataset: GraphDataset) -> None:
     task = dataset.task("main")
-    model = SampleLevelModel(task.channel_names, 4, covariate_dim=task.covariate_dim)
+    model = SampleLevelModel(task.node_feature_names, 4, sample_feature_dim=task.sample_feature_dim)
     with pytest.raises(ValueError, match="node_embeddings are required"):
         model(_batch(dataset))
-    with pytest.raises(ValueError, match="requires a task with covariates"):
-        SampleLevelModel(task.channel_names, 4, covariate_dim=0, use_covariates=True)
+    with pytest.raises(ValueError, match="requires a task that has sample-level features"):
+        SampleLevelModel(task.node_feature_names, 4, sample_feature_dim=0, use_sample_features=True)
     with pytest.raises(ValueError, match="block must be one of"):
-        SampleLevelModel(task.channel_names, 4, block="fancy")
+        SampleLevelModel(task.node_feature_names, 4, block="fancy")
 
 
-def test_dense_and_sparse_channels_agree(dataset: GraphDataset) -> None:
+def test_dense_and_sparse_node_features_agree(dataset: GraphDataset) -> None:
     """The same values fed as a dense row or as sparse triples must score alike."""
     torch.manual_seed(0)
     values = torch.tensor([[0.5, -1.5, 2.0], [1.0, 0.0, -0.5]])
     genes = torch.tensor([1, 4, 7])
     dense = SampleBatch(
-        channels={"c": ChannelBatch("dense", genes, values)},
+        node_features={"c": NodeFeatureBatch("dense", genes, values)},
         label=torch.zeros(2),
         index=torch.arange(2),
     )
     sparse = SampleBatch(
-        channels={"c": ChannelBatch(
+        node_features={"c": NodeFeatureBatch(
             "sparse",
             genes.repeat(2),
             values.reshape(-1, 1),
@@ -76,23 +76,23 @@ def test_dense_and_sparse_channels_agree(dataset: GraphDataset) -> None:
 def test_config_round_trip_and_module_order(dataset: GraphDataset) -> None:
     task = dataset.task("main")
     model = build_model(
-        task.channel_names, task.covariate_dim, 4,
+        task.node_feature_names, task.sample_feature_dim, 4,
         {"hidden_dim": 5, "batch_norm": True, "block": "paper"},
-        use_graph=True, use_covariates=True,
+        use_graph=True, use_sample_features=True,
     )
     clone = SampleLevelModel.from_config(model.config)
     assert clone.config == model.config
     clone.load_state_dict(model.state_dict())
     # The parameter order fixes the initialisation draws, so keep it pinned:
-    # value projection, then every channel's gene block, then their aggregation
-    # blocks, then the covariate branch, then the head.
+    # value projection, then every node-level feature's gene block, then their
+    # aggregation blocks, then the sample-level feature branch, then the head.
     assert [name for name, _ in model.named_parameters() if name.endswith("0.weight")] == [
         "value_projection.0.weight",
         "gene_blocks.0.0.weight",
         "gene_blocks.1.0.weight",
         "aggregate_blocks.0.0.weight",
         "aggregate_blocks.1.0.weight",
-        "covariate_block.0.weight",
+        "sample_feature_block.0.weight",
         "output.0.weight",
     ]
 

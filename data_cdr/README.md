@@ -184,8 +184,8 @@ bash scripts/cdr/reproduce.sh
 | 関係タイプ数 | 356 |
 | 有向エッジ数 | 536,274 |
 | サンプル数 | 107,418（760 細胞株 × 168 化合物の一部） |
-| channel | `mutation`（sparse、760 行 / 117,880 値。同一プロファイルを重複排除し `rows/mutation.npy` で写像） |
-| covariates | 3,348 次元（スペクトル 257 + 部位 one-hot 19 + フィンガープリント 3,072） |
+| node-level feature | `mutation`（sparse、760 行 / 117,880 値。同一プロファイルを重複排除し `rows/mutation.npy` で写像） |
+| sample-level features | 3,348 次元（スペクトル 257 + 部位 one-hot 19 + フィンガープリント 3,072） |
 | groups | 原発部位 19 種 |
 | tasks | `sensitive_drugwise`（化合物ごとの `LN_IC50` 中央値で二値化）、`sensitive_global`（全体中央値） |
 

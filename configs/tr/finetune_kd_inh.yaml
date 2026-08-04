@@ -12,7 +12,7 @@ pretrained_checkpoint: outputs/tr/pretrain/best.pt
 
 variant:
   use_graph: true
-  use_covariates: false
+  use_sample_features: false
 
 model:
   hidden_dim: 64

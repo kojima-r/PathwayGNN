@@ -3,7 +3,7 @@
 Runs one grid of ``variants x tasks x folds``, resumes at fold level and writes
 ``<output_dir>/<task>/<variant>/fold_<k>/{metrics.json,predictions.npz,model.pt}``
 plus a per-condition ``summary.json``. Nothing here is dataset-specific: the
-group breakdown, the covariate branch and the channel list all come from the
+group breakdown, the sample_feature branch and the node_feature list all come from the
 task manifest.
 
 Every evaluation records ROC-AUC *and* accuracy/precision/recall/F1 at a 0.5
@@ -46,20 +46,20 @@ def fold_metrics(target: np.ndarray, probability: np.ndarray) -> dict[str, float
 
 
 def standardizer(
-    covariates: np.ndarray | None, train_index: np.ndarray, device: torch.device
+    sample_features: np.ndarray | None, train_index: np.ndarray, device: torch.device
 ) -> tuple[Tensor | None, Tensor | None]:
-    if covariates is None:
+    if sample_features is None:
         return None, None
-    values = torch.from_numpy(np.asarray(covariates[train_index]).copy()).float().to(device)
+    values = torch.from_numpy(np.asarray(sample_features[train_index]).copy()).float().to(device)
     mean = values.mean(dim=0)
     std = values.std(dim=0, unbiased=False)
     std[std == 0] = 1
     return mean, std
 
 
-def normalize_covariates(batch, mean: Tensor | None, std: Tensor | None):
-    if batch.covariate is not None and mean is not None:
-        batch.covariate = (batch.covariate - mean) / std
+def normalize_sample_features(batch, mean: Tensor | None, std: Tensor | None):
+    if batch.sample_feature is not None and mean is not None:
+        batch.sample_feature = (batch.sample_feature - mean) / std
     return batch
 
 
@@ -100,7 +100,7 @@ def _evaluate(
         if encoder is not None and embeddings is None:
             embeddings = encoder(*graph)  # type: ignore[misc]
         for batch in loader:
-            batch = normalize_covariates(batch.to(device), mean, std)
+            batch = normalize_sample_features(batch.to(device), mean, std)
             logits = predictor(batch, embeddings)
             probabilities.append(logits.sigmoid().cpu().numpy())
             targets.append(batch.label.cpu().numpy())
@@ -200,12 +200,12 @@ def _one_fold(
                 frozen_embeddings = encoder(*graph)
         embedding_dim = encoder.hidden_dim
     predictor = build_model(
-        task.channel_names,
-        task.covariate_dim,
+        task.node_feature_names,
+        task.sample_feature_dim,
         embedding_dim,
         model_cfg,
         use_graph,
-        bool(variant.get("use_covariates", False)),
+        bool(variant.get("use_sample_features", False)),
     ).to(device)
     params = list(predictor.parameters()) + (list(encoder.parameters()) if train_encoder else [])
     optimizer = torch.optim.AdamW(
@@ -216,7 +216,7 @@ def _one_fold(
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="max", factor=0.5, patience=int(training.get("scheduler_patience", 10))
     )
-    mean, std = standardizer(task.covariates(), train_index, device)
+    mean, std = standardizer(task.sample_features(), train_index, device)
     pos_weight = _pos_weight(training.get("pos_weight"), train_data.targets, device)
     loss_clip = training.get("loss_clip")
     reduction = training.get("loss_reduction", "mean")
@@ -229,7 +229,7 @@ def _one_fold(
             encoder.train(train_encoder)
         total_loss = total_samples = 0.0
         for batch in train_loader:
-            batch = normalize_covariates(batch.to(device), mean, std)
+            batch = normalize_sample_features(batch.to(device), mean, std)
             embeddings = frozen_embeddings
             if encoder is not None and train_encoder:
                 embeddings = encoder(*graph)  # type: ignore[misc]
@@ -282,8 +282,8 @@ def _one_fold(
             "task": task.name,
             "model_config": predictor.config,
             "pretrained_checkpoint": cfg.get("pretrained_checkpoint"),
-            "covariate_mean": None if mean is None else mean.detach().cpu(),
-            "covariate_std": None if std is None else std.detach().cpu(),
+            "sample_feature_mean": None if mean is None else mean.detach().cpu(),
+            "sample_feature_std": None if std is None else std.detach().cpu(),
         },
         model_path,
     )

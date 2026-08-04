@@ -79,7 +79,7 @@ def _cv_conditions(cv_dir: Path, task: str) -> dict[str, dict[str, Any]]:
 
 
 def _variant_key(name: str, variant: dict[str, Any]) -> tuple[bool, bool, str]:
-    return bool(variant.get("use_graph")), bool(variant.get("use_covariates")), name
+    return bool(variant.get("use_graph")), bool(variant.get("use_sample_features")), name
 
 
 def _variant_order(conditions: dict[str, dict[str, dict[str, Any]]]) -> list[str]:
@@ -96,7 +96,7 @@ def _flags(conditions: dict[str, dict[str, dict[str, Any]]]) -> dict[str, tuple[
         for name, summary in task_conditions.items():
             variant = summary["variant"]
             flags.setdefault(
-                name, (bool(variant.get("use_graph")), bool(variant.get("use_covariates")))
+                name, (bool(variant.get("use_graph")), bool(variant.get("use_sample_features")))
             )
     return flags
 
@@ -131,21 +131,21 @@ def _ablation(
     for task in tasks:
         summaries = conditions.get(task, {})
 
-        def auc(graph: bool, covariates: bool) -> float:
-            name = by_flags.get((graph, covariates))
+        def auc(graph: bool, sample_features: bool) -> float:
+            name = by_flags.get((graph, sample_features))
             return summaries.get(name, {}).get("mean_auc", math.nan) if name else math.nan
 
-        for covariates in (False, True):
-            base, switched = auc(False, covariates), auc(True, covariates)
+        for sample_features in (False, True):
+            base, switched = auc(False, sample_features), auc(True, sample_features)
             rows.append([
-                task, "graph encoder", f"use_covariates={covariates}",
-                by_flags.get((False, covariates), ""), base,
-                by_flags.get((True, covariates), ""), switched, switched - base,
+                task, "graph encoder", f"use_sample_features={sample_features}",
+                by_flags.get((False, sample_features), ""), base,
+                by_flags.get((True, sample_features), ""), switched, switched - base,
             ])
         for graph in (False, True):
             base, switched = auc(graph, False), auc(graph, True)
             rows.append([
-                task, "covariates", f"use_graph={graph}",
+                task, "sample-level features", f"use_graph={graph}",
                 by_flags.get((graph, False), ""), base,
                 by_flags.get((graph, True), ""), switched, switched - base,
             ])
@@ -406,19 +406,19 @@ def _plots(
             ax.tick_params(axis="y", labelsize=7)
         save(fig, "ig_top_nodes.png")
 
-    covariate_tasks = [task for task in tasks if attributions.get(task, {}).get("top_covariates")]
-    if covariate_tasks:
-        fig, axes = plt.subplots(1, len(covariate_tasks), figsize=(6.5 * len(covariate_tasks), 6),
+    sample_feature_tasks = [task for task in tasks if attributions.get(task, {}).get("top_sample_features")]
+    if sample_feature_tasks:
+        fig, axes = plt.subplots(1, len(sample_feature_tasks), figsize=(6.5 * len(sample_feature_tasks), 6),
                                  squeeze=False)
-        for column, task in enumerate(covariate_tasks):
+        for column, task in enumerate(sample_feature_tasks):
             ax = axes[0][column]
-            rows_here = attributions[task]["top_covariates"][:top_k][::-1]
+            rows_here = attributions[task]["top_sample_features"][:top_k][::-1]
             ax.barh([row[0] for row in rows_here], [row[1] for row in rows_here],
                     color=["#e45756" if row[1] < 0 else "#4c78a8" for row in rows_here])
             ax.axvline(0, color="black", lw=1)
-            ax.set(xlabel="Signed IG", title=f"{task}: top {top_k} covariates")
+            ax.set(xlabel="Signed IG", title=f"{task}: top {top_k} sample_features")
             ax.tick_params(axis="y", labelsize=7)
-        save(fig, "ig_top_covariates.png")
+        save(fig, "ig_top_sample_features.png")
 
     assets.mkdir(parents=True, exist_ok=True)
     for name in made:
@@ -445,8 +445,8 @@ def run_cdr_report(cfg: dict[str, Any]) -> dict[str, Any]:
     source = dataset.manifest.get("source", {})
 
     # --- dataset audit -----------------------------------------------------
-    channel = dataset.channel("mutation")
-    profile_lengths = np.diff(np.asarray(channel.csr()[0]))
+    node_feature = dataset.node_feature("mutation")
+    profile_lengths = np.diff(np.asarray(node_feature.csr()[0]))
     audit: dict[str, dict[str, Any]] = {}
     audit_rows = []
     site_counts: list[tuple[str, int]] = []
@@ -465,8 +465,8 @@ def run_cdr_report(cfg: dict[str, Any]) -> dict[str, Any]:
         audit_rows.append([
             name, int(labels.size), int(labels.sum()), float(labels.mean()),
             task_source.get("num_cell_lines", ""), task_source.get("num_compounds", ""),
-            int(np.unique(groups).size), len(task.group_names), task.covariate_dim,
-            int(channel.num_rows), float(profile_lengths.mean()),
+            int(np.unique(groups).size), len(task.group_names), task.sample_feature_dim,
+            int(node_feature.num_rows), float(profile_lengths.mean()),
             task_source.get("reference", ""),
         ])
         if not site_counts:
@@ -476,7 +476,7 @@ def run_cdr_report(cfg: dict[str, Any]) -> dict[str, Any]:
             ]
             site_counts.sort(key=lambda item: item[1], reverse=True)
     audit_header = ["task", "samples", "positive", "positive_ratio", "cell_lines", "compounds",
-                    "sites_used", "sites_total", "covariates", "mutation_rows",
+                    "sites_used", "sites_total", "sample_features", "mutation_rows",
                     "mean_genes_mutation", "label_reference"]
     tsv(output / "dataset_audit.tsv", audit_header, audit_rows)
 
@@ -494,7 +494,7 @@ def run_cdr_report(cfg: dict[str, Any]) -> dict[str, Any]:
             entry = pooled[(name, variant)]
             cv_rows.append([
                 name, variant, bool(summary["variant"].get("use_graph")),
-                bool(summary["variant"].get("use_covariates")),
+                bool(summary["variant"].get("use_sample_features")),
                 summary["mean_auc"], summary["std_auc"],
                 *[summary.get(f"mean_{metric}", math.nan) for metric in METRICS[1:]],
                 min(summary["fold_auc"]), max(summary["fold_auc"]),
@@ -503,7 +503,7 @@ def run_cdr_report(cfg: dict[str, Any]) -> dict[str, Any]:
             ])
             fold_rows.append([name, variant, *summary["fold_auc"],
                               summary["mean_auc"], summary["std_auc"]])
-    cv_header = ["task", "variant", "uses_graph", "uses_covariates", "mean_auc", "std_auc",
+    cv_header = ["task", "variant", "uses_graph", "uses_sample_features", "mean_auc", "std_auc",
                  *[f"mean_{metric}" for metric in METRICS[1:]],
                  "min_fold_auc", "max_fold_auc", "pooled_auc", "folds"]
     tsv(output / "cv_summary.tsv", cv_header, cv_rows)
@@ -589,7 +589,7 @@ def run_cdr_report(cfg: dict[str, Any]) -> dict[str, Any]:
     # --- attributions -------------------------------------------------------
     node_names = dataset.node_names()
     attributions: dict[str, dict[str, Any]] = {}
-    ig_rows, channel_rows, covariate_rows = [], [], []
+    ig_rows, node_feature_rows, sample_feature_rows = [], [], []
     for name in tasks:
         candidates = sorted(ig_dir.glob(f"{name}_fold*"))
         summary = _read(candidates[0] / "ig_summary.json") if candidates else None
@@ -613,25 +613,25 @@ def run_cdr_report(cfg: dict[str, Any]) -> dict[str, Any]:
             for rank, node in enumerate(entry["top_nodes"], start=1):
                 ig_rows.append([name, rank, node[0], node[1], node[2], node[3]])
         for key in arrays.files:
-            if not key.startswith("channel_"):
+            if not key.startswith("node_feature_"):
                 continue
             score = arrays[key]
             order = np.argsort(np.abs(score))[::-1][:top_k]
             for rank, index in enumerate(order, start=1):
-                channel_rows.append([name, key.removeprefix("channel_"), rank, int(index),
+                node_feature_rows.append([name, key.removeprefix("node_feature_"), rank, int(index),
                                      _label(node_names[int(index)], symbols), float(score[index])])
-        covariate_ig = summary.get("covariate_ig", {})
-        entry["top_covariates"] = sorted(
-            covariate_ig.items(), key=lambda item: abs(item[1]), reverse=True
+        sample_feature_ig = summary.get("sample_feature_ig", {})
+        entry["top_sample_features"] = sorted(
+            sample_feature_ig.items(), key=lambda item: abs(item[1]), reverse=True
         )[:top_k]
-        for rank, (covariate, value) in enumerate(entry["top_covariates"], start=1):
-            covariate_rows.append([name, rank, covariate, value])
+        for rank, (sample_feature, value) in enumerate(entry["top_sample_features"], start=1):
+            sample_feature_rows.append([name, rank, sample_feature, value])
         attributions[name] = entry
     tsv(output / "ig_top_graph_nodes.tsv",
         ["task", "rank", "node_index", "node", "ig_l2", "degree"], ig_rows)
-    tsv(output / "ig_top_channel_genes.tsv",
-        ["task", "channel", "rank", "node_index", "node", "signed_ig"], channel_rows)
-    tsv(output / "ig_top_covariates.tsv", ["task", "rank", "covariate", "signed_ig"], covariate_rows)
+    tsv(output / "ig_top_node_feature_genes.tsv",
+        ["task", "node_feature", "rank", "node_index", "node", "signed_ig"], node_feature_rows)
+    tsv(output / "ig_top_sample_features.tsv", ["task", "rank", "sample_feature", "signed_ig"], sample_feature_rows)
 
     pretrain_history = _read(Path(cfg.get("pretrain_history", "outputs/cdr/pretrain/history.json")))
     made = _plots(output, docs / assets_name, tasks, all_variants, audit, conditions, pooled,
@@ -677,8 +677,8 @@ def run_cdr_report(cfg: dict[str, Any]) -> dict[str, Any]:
         for name in attributions
         for rank, node in enumerate(attributions[name].get("top_nodes", [])[:top_k], start=1)
     ]
-    channel_table = [[*row[:3], *row[4:]] for row in channel_rows if row[2] <= 10]
-    covariate_table = [row for row in covariate_rows if row[1] <= 10]
+    node_feature_table = [[*row[:3], *row[4:]] for row in node_feature_rows if row[2] <= 10]
+    sample_feature_table = [row for row in sample_feature_rows if row[1] <= 10]
     def _versus(task: str) -> str:
         models = benchmark.get(task, {})
         if not models or not conditions.get(task):
@@ -716,15 +716,15 @@ label, because `pathwaygnn` trains binary problems only:
 * **sensitive_global** — 1 when `LN_IC50` is below the median over all samples. Here the compound
   identity alone explains most of the label.
 
-Each sample carries one sparse channel and one covariate vector:
+Each sample carries one sparse node-level feature and one sample-level feature vector:
 
-* channel `mutation` — the number of mutations per Cancer-Gene-Census gene of the cell line, indexed
+* node_feature `mutation` — the number of mutations per Cancer-Gene-Census gene of the cell line, indexed
   by graph node. Because the profile depends only on the cell line, the
   {source.get('num_samples', 0):,} samples share {source.get('distinct_mutation_profiles', 0)}
   distinct rows through `rows/mutation.npy`.
-* covariates — the GraphCDRScan sample-feature vector verbatim: the 96/78/83-context mutational
+* sample_features — the GraphCDRScan sample-feature vector verbatim: the 96/78/83-context mutational
   spectra of the cell line, its primary-site one-hot and the 3 x 1024-bit RDKit compound
-  fingerprint ({source.get('covariate_dim', 0):,} values).
+  fingerprint ({source.get('sample_feature_dim', 0):,} values).
 
 Every number below comes from artifacts under `outputs/cdr/`, and every table is also written as TSV
 under `{output}/`. Cross-validation and the graph-free baselines use the same stratified 5-fold
@@ -735,7 +735,7 @@ attribution runs on fold 0 of `gnn_mlp_cov`, and holdout fine-tuning uses its ow
 
 {mdtable(audit_header, audit_rows)}
 
-`mutation_rows` is the number of distinct mutation profiles the channel stores, and
+`mutation_rows` is the number of distinct mutation profiles the table stores, and
 `mean_genes_mutation` the mean number of mutated census genes per profile. `sites_used` counts the
 primary sites that actually appear, out of `sites_total` in the one-hot block.
 
@@ -750,28 +750,28 @@ condition can rank well and still sit at a poor operating point (or the reverse)
 
 {threshold_note}
 
-The grid is a two-factor ablation — the pathway graph on/off crossed with the covariate branch
+The grid is a two-factor ablation — the pathway graph on/off crossed with the sample-level feature branch
 on/off — so each switch can be read with the other held fixed:
 
 {mdtable(ablation_header, ablation_rows)}
 
-The `covariates` rows are large by construction: the covariate block carries the compound
+The `use_sample_features` rows are large by construction: the sample-level feature block carries the compound
 fingerprint, and `sensitive_global` is mostly a question about the compound. The rows that speak to
 the pathway graph are the `graph encoder` ones, and they are only informative where the mutation
-channel is the model's *only* view of the sample (`use_covariates=False`) — with the covariates on,
+node-level feature is the model's *only* view of the sample (`use_sample_features=False`) — with the sample-level features on,
 the graph has little left to add.
 
 ## Graph-free baselines (`pathwaygnn benchmark`)
 
 {mdtable(["task", "model", *METRICS], benchmark_rows)}
 
-The baselines consume exactly the same features as the GNN — the mutation channel expanded to
-`[samples, {dataset.num_nodes:,}]` plus the covariate block — without the pathway graph. All five
+The baselines consume exactly the same features as the GNN — the mutation table expanded to
+`[samples, {dataset.num_nodes:,}]` plus the sample-level feature block — without the pathway graph. All five
 metrics are on the same footing: both sides are the mean over the same five folds, and both
 threshold at 0.5. These are reference points, not tuned models: the features are unscaled
 counts and raw bits, so `LogisticRegression` hits its `max_iter=1000` lbfgs limit without
 converging, and the forest is capped at 60 trees of depth 12 to finish on a
-107,418 x {dataset.num_nodes + (dataset.task(tasks[0]).covariate_dim if tasks else 0):,} matrix.
+107,418 x {dataset.num_nodes + (dataset.task(tasks[0]).sample_feature_dim if tasks else 0):,} matrix.
 
 ## Holdout fine-tuning (`pathwaygnn finetune`)
 
@@ -795,13 +795,13 @@ Top attributed graph nodes (HGNC ids resolved to approved symbols through
 
 {mdtable(["task", "rank", "node", "ig_l2", "degree"], ig_table)}
 
-Top 10 attributed genes of the `mutation` channel:
+Top 10 attributed genes of the `mutation` node-level feature:
 
-{mdtable(["task", "channel", "rank", "node", "signed_ig"], channel_table)}
+{mdtable(["task", "node_feature", "rank", "node", "signed_ig"], node_feature_table)}
 
-Top 10 attributed covariates:
+Top 10 attributed sample-level features:
 
-{mdtable(["task", "rank", "covariate", "signed_ig"], covariate_table)}
+{mdtable(["task", "rank", "sample_feature", "signed_ig"], sample_feature_table)}
 
 Degree/attribution Pearson correlation:
 {', '.join(f"{name} r={attributions[name]['pearson_r']:.3f} "
@@ -811,8 +811,8 @@ Degree/attribution Pearson correlation:
 
 The graph ranking is degree-driven — the top of it is the ubiquitin/ribosomal hubs (`UBC`, `UBB`,
 `UBA52`, `RPS27A`) that dominate Reactome's functional-interaction network. Read it as where the
-encoder puts its mass, not as evidence of a drug-response mechanism; the `mutation` channel table is
-the gene-level view, and the covariate table separates what comes from the compound fingerprint from
+encoder puts its mass, not as evidence of a drug-response mechanism; the `mutation` table is
+the gene-level view, and the sample-level feature table separates what comes from the compound fingerprint from
 what comes from the cell line's spectra and site.
 
 ## Plots
@@ -845,7 +845,7 @@ These are the numbers this pipeline currently produces on this data, not a claim
 architecture solves drug-response prediction. Read them with these caveats:
 
 * **Tree baselines are the reference to beat.** On these folds, {versus_line}. The GNN pipeline is
-  not the strongest model here; the graph earns its keep only in the covariate-free ablation, where
+  not the strongest model here; the graph earns its keep only in the sample_feature-free ablation, where
   it is the difference between chance and a weak but non-zero signal.
 * **The two tasks are not equally hard by construction.** `sensitive_global` is largely a question
   about the compound, `sensitive_drugwise` largely a question about the cell line; comparing their
@@ -853,7 +853,7 @@ architecture solves drug-response prediction. Read them with these caveats:
 * **Folds are random over samples, not over cell lines or compounds.** A cell line appears in both
   the training and the held-out fold with different compounds, so these numbers describe filling in
   a partly observed response matrix, not generalisation to an unseen cell line.
-* **The mutation channel is a scalar per gene.** GraphCDRScan's per-mutation node features (variant
+* **The mutation node_feature is a scalar per gene.** GraphCDRScan's per-mutation node features (variant
   type, encoded genomic position) are reduced to a mutation count, because the sample-level head
   projects one value per gene. The spectra keep some of that information at the sample level.
 * **These are current-release inputs, not the 2018 CDRscan experiment.** GraphCDRScan substitutes
