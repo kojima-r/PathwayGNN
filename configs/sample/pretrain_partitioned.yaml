@@ -1,0 +1,20 @@
+# The tutorial corpus run through the partitioned (Cluster-GCN) pre-training path.
+# 20 nodes need no partitioning whatsoever — this config exists so the mechanism
+# can be exercised end to end in ~10 s before it is pointed at a real graph.
+defaults:
+  - pretrain.yaml
+
+training:
+  # `partition.dir` is the switch: with this block present, `pretrain` trains on
+  # subgraphs induced by batches of METIS partitions instead of on the full graph,
+  # and never opens graph.pt.
+  partition:
+    dir: outputs/sample/partitions
+    num_parts: 4         # 20 nodes / 4 -> ~5 nodes per partition
+    parts_per_batch: 2   # one step sees ~10 nodes and the edges among them
+  # One epoch is now one pass over the partitions (2 steps here), so
+  # `steps_per_epoch` from pretrain.yaml no longer applies.
+  epochs: 100
+  batch_size: 32         # positive edges drawn per step, from within the subgraph
+
+output_dir: outputs/sample/pretrain_partitioned

@@ -19,7 +19,7 @@ import numpy as np
 from sklearn.metrics import roc_auc_score, roc_curve
 
 from pathwaygnn.data.format import GraphDataset, Task
-from pathwaygnn_datasets.document import figures, mdtable, tsv, write_document
+from pathwaygnn_datasets.document import figures, mdtable, repo_path, tsv, write_document
 
 TITLE = "PathwayGNN target repositioning report"
 VARIANT_COLORS = {"mlp": "#4c78a8", "gnn_mlp": "#54a24b"}
@@ -593,7 +593,7 @@ def run_tr_report(cfg: dict[str, Any]) -> dict[str, Any]:
 
 ## What this report covers
 
-Dataset **{dataset.name}** at `{dataset.manifest['source'].get('source_dir', dataset.manifest['source'].get('raw_dir', dataset.root))}`, prepared
+Dataset **{dataset.name}** at `{repo_path(dataset.manifest['source'].get('source_dir', dataset.manifest['source'].get('raw_dir', dataset.root)))}`, prepared
 into `{dataset.root}`: {dataset.num_nodes:,} graph nodes, {dataset.manifest['num_edges']:,} directed
 edges, {dataset.num_relations} relation types, tasks {', '.join(tasks)}. Run status: {status}.
 Graph pre-training: {pretrain_line}.

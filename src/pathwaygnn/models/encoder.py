@@ -94,8 +94,23 @@ class GraphPretrainer(nn.Module):
         positive_edges: Tensor,
         positive_types: Tensor,
         negative_edges: Tensor,
+        nodes: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
-        embeddings = self.encoder(graph_edge_index, graph_edge_type)
+        """Score positive against corrupted edges over the graph it is given.
+
+        ``nodes`` switches from full-graph to *partition* mode: the edges are then
+        indexed locally within that node set, and only its rows of the embedding
+        table are gathered, which is what bounds a step's activation memory to the
+        subgraph (see :mod:`pathwaygnn.data.partition`). Every parameter still
+        takes part in the step, so DDP needs no unused-parameter search.
+        """
+        embeddings = (
+            self.encoder(graph_edge_index, graph_edge_type)
+            if nodes is None
+            else self.encoder.forward_from_embedding(
+                self.encoder.embedding(nodes), graph_edge_index, graph_edge_type
+            )
+        )
         return (
             self.score(embeddings, positive_edges, positive_types),
             self.score(embeddings, negative_edges, positive_types),

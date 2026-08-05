@@ -1,0 +1,31 @@
+# Partitioned (Cluster-GCN) pre-training on the target-repositioning graph.
+#
+# The full-graph loop (`pretrain.yaml`) keeps the whole graph on every rank and
+# its per-step activations grow as num_nodes x hidden_dim x num_relations. This
+# config instead trains on subgraphs induced by batches of METIS partitions, so
+# peak memory is set by `parts_per_batch` and is independent of the graph size.
+#
+# Cut the graph once first (needs the whole graph in memory, once):
+#   pathwaygnn partition --config configs/tr/pretrain_partitioned.yaml
+# then train, optionally across ranks (each rank takes disjoint partitions):
+#   NPROC_PER_NODE=4 bash scripts/tr/pretrain_partitioned.sh
+defaults:
+  - pretrain.yaml
+
+training:
+  partition:
+    dir: data_tr/partitions
+    num_parts: 256
+    parts_per_batch: 8
+    recursive: false     # multilevel k-way; `true` uses recursive bisection
+    shuffle: true        # reshuffle the partition order every epoch
+    num_workers: 4       # partition files are read from disk, so prefetch them
+    # Set to false once the partitions exist to guarantee that a training run can
+    # never fall back to loading the whole graph.
+    create: true
+  # One epoch = one pass over this rank's partitions (256 / 8 = 32 steps at
+  # WORLD_SIZE 1), so `steps_per_epoch` no longer applies.
+  epochs: 100
+  batch_size: 8192       # positive edges per step, drawn from within the subgraph
+
+output_dir: outputs/tr/pretrain_partitioned

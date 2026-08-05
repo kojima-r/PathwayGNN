@@ -67,25 +67,25 @@ Cancer-level counts are in outputs/cancer/report/supplementary_table1_sample_cou
 
 ## Reproduction plots
 
-![table1_auc_by_year.png](cancer_reproduction_assets/table1_auc_by_year.png)
+![Table1 AUC by year](cancer_reproduction_assets/table1_auc_by_year.png)
 
-![table1_auc_delta.png](cancer_reproduction_assets/table1_auc_delta.png)
+![Table1 AUC delta](cancer_reproduction_assets/table1_auc_delta.png)
 
-![table1_fold_auc_boxplot.png](cancer_reproduction_assets/table1_fold_auc_boxplot.png)
+![Table1 fold AUC boxplot](cancer_reproduction_assets/table1_fold_auc_boxplot.png)
 
-![supplementary_table1_sample_counts.png](cancer_reproduction_assets/supplementary_table1_sample_counts.png)
+![Supplementary table1 sample counts](cancer_reproduction_assets/supplementary_table1_sample_counts.png)
 
-![figure3a_per_cancer_auc.png](cancer_reproduction_assets/figure3a_per_cancer_auc.png)
+![Figure3a per cancer AUC](cancer_reproduction_assets/figure3a_per_cancer_auc.png)
 
-![figure3b_per_cancer_auc_transition.png](cancer_reproduction_assets/figure3b_per_cancer_auc_transition.png)
+![Figure3b per cancer AUC transition](cancer_reproduction_assets/figure3b_per_cancer_auc_transition.png)
 
-![figure2_pretraining_sweep.png](cancer_reproduction_assets/figure2_pretraining_sweep.png)
+![Figure2 pretraining sweep](cancer_reproduction_assets/figure2_pretraining_sweep.png)
 
-![table1_training_curves.png](cancer_reproduction_assets/table1_training_curves.png)
+![Table1 training curves](cancer_reproduction_assets/table1_training_curves.png)
 
-![pretraining_diagnostics.png](cancer_reproduction_assets/pretraining_diagnostics.png)
+![Pretraining diagnostics](cancer_reproduction_assets/pretraining_diagnostics.png)
 
-![figure4_degree_vs_ig.png](cancer_reproduction_assets/figure4_degree_vs_ig.png)
+![Figure4 degree vs IG](cancer_reproduction_assets/figure4_degree_vs_ig.png)
 
 ## Exact commands
 

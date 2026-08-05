@@ -24,6 +24,9 @@ data_cdr/processed/
 # scripts/tr/upstream/download_raw_data.py + `pathwaygnn-data tr-build-processed`.
 data_tr/raw/
 data_tr/processed/
+# METIS graph partitions, regenerable from prepared/ with `pathwaygnn partition`.
+# The partition files themselves match *.pt below; this also covers the manifest.
+data_*/partitions/
 outputs/
 *.pt
 *.pth

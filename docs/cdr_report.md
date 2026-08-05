@@ -4,7 +4,7 @@
 
 Dataset **cdr** — the GraphCDRScan corpus (GDSC1 dose response, Cell Model Passports
 mutations, Reactome functional interactions) — prepared from
-`/data1/kojima/PathwayGNN/PathwayGNN/data_cdr/processed/full_features` into `data_cdr/prepared`:
+`data_cdr/processed/full_features` into `data_cdr/prepared`:
 13,606 graph nodes, 536,274 directed edges,
 356 relation types, 107,418 samples built from
 760 cell lines x 168 compounds, tasks
@@ -279,33 +279,33 @@ what comes from the cell line's spectra and site.
 
 ## Plots
 
-![dataset_composition.png](cdr_report_assets/dataset_composition.png)
+![Dataset composition](cdr_report_assets/dataset_composition.png)
 
-![pretraining_diagnostics.png](cdr_report_assets/pretraining_diagnostics.png)
+![Pretraining diagnostics](cdr_report_assets/pretraining_diagnostics.png)
 
-![cv_auc_by_task_variant.png](cdr_report_assets/cv_auc_by_task_variant.png)
+![CV AUC by task variant](cdr_report_assets/cv_auc_by_task_variant.png)
 
-![ablation_deltas.png](cdr_report_assets/ablation_deltas.png)
+![Ablation deltas](cdr_report_assets/ablation_deltas.png)
 
-![cv_fold_auc_boxplot.png](cdr_report_assets/cv_fold_auc_boxplot.png)
+![CV fold AUC boxplot](cdr_report_assets/cv_fold_auc_boxplot.png)
 
-![cv_roc_curves.png](cdr_report_assets/cv_roc_curves.png)
+![CV ROC curves](cdr_report_assets/cv_roc_curves.png)
 
-![cv_training_curves.png](cdr_report_assets/cv_training_curves.png)
+![CV training curves](cdr_report_assets/cv_training_curves.png)
 
-![per_site_auc_scatter.png](cdr_report_assets/per_site_auc_scatter.png)
+![Per site AUC scatter](cdr_report_assets/per_site_auc_scatter.png)
 
-![per_site_auc_vs_samples.png](cdr_report_assets/per_site_auc_vs_samples.png)
+![Per site AUC vs samples](cdr_report_assets/per_site_auc_vs_samples.png)
 
-![benchmark_vs_gnn.png](cdr_report_assets/benchmark_vs_gnn.png)
+![Benchmark vs GNN](cdr_report_assets/benchmark_vs_gnn.png)
 
-![finetune_curves.png](cdr_report_assets/finetune_curves.png)
+![Finetune curves](cdr_report_assets/finetune_curves.png)
 
-![ig_degree_vs_score.png](cdr_report_assets/ig_degree_vs_score.png)
+![IG degree vs score](cdr_report_assets/ig_degree_vs_score.png)
 
-![ig_top_nodes.png](cdr_report_assets/ig_top_nodes.png)
+![IG top nodes](cdr_report_assets/ig_top_nodes.png)
 
-![ig_top_sample_features.png](cdr_report_assets/ig_top_sample_features.png)
+![IG top sample features](cdr_report_assets/ig_top_sample_features.png)
 
 ## Exact commands
 

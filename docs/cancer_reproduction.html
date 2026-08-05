@@ -1,27 +1,112 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cancer reproduction</title><style>body{font:16px/1.55 system-ui;max-width:1180px;margin:auto;padding:2rem}table{border-collapse:collapse;display:block;overflow:auto}th,td{border:1px solid #bbb;padding:.35rem .55rem;text-align:right}th:first-child,td:first-child{text-align:left}img{max-width:100%}pre,code{background:#f4f4f4}pre{padding:1rem;overflow:auto}</style></head><body><h1>Inoue et al. cancer prognosis reproduction</h1>
-<h2>Reproduction status</h2>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cancer reproduction</title><style>
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{
+  margin:0;padding:3.25rem 1.5rem 6rem;background:#fff;color:#1b1f24;
+  font:400 16.5px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  display:grid;grid-template-columns:1fr min(62rem,100%) 1fr;
+}
+body>*{grid-column:2}
+h1,h2,h3,h4{line-height:1.25;font-weight:650;letter-spacing:-.011em;margin:0;scroll-margin-top:1rem}
+h1{font-size:2.05rem;padding-bottom:.9rem;border-bottom:2px solid #1b1f24;margin-bottom:1.6rem}
+h2{font-size:1.45rem;margin:3rem 0 1rem;padding-top:1.1rem;border-top:1px solid #e3e7eb}
+h3{font-size:1.12rem;margin:2.1rem 0 .7rem;color:#2c3239}
+h4{font-size:1rem;margin:1.6rem 0 .5rem;color:#454c54}
+p{margin:0 0 1.05rem}
+p,li{max-width:44rem}
+ul,ol{margin:0 0 1.3rem;padding-left:1.35rem}
+li{margin:0 0 .5rem}
+strong{font-weight:650;color:#11161b}
+a{color:#0b5cad;text-underline-offset:2px}
+code{
+  font:500 .875em/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  background:#f2f4f7;border:1px solid #e6eaee;border-radius:4px;padding:.08em .32em;
+  overflow-wrap:break-word;
+}
+pre{
+  background:#f7f9fb;border:1px solid #e3e7eb;border-left:3px solid #98a2ac;border-radius:6px;
+  padding:.95rem 1.1rem;overflow-x:auto;margin:0 0 1.5rem;
+}
+pre code{background:none;border:0;padding:0;font-size:.855rem}
+
+/* fit-content, so a narrow numeric table stays compact instead of being stretched
+   across the band; max-width then turns an over-wide one into a scroller. */
+.tablewrap{
+  width:fit-content;max-width:100%;overflow-x:auto;
+  margin:0 auto 1.7rem;border:1px solid #dfe4e9;border-radius:8px;
+}
+table{border-collapse:collapse;width:auto;font-size:.895rem;font-variant-numeric:tabular-nums}
+th,td{padding:.48rem .8rem;text-align:right;border-bottom:1px solid #edf0f3;white-space:nowrap}
+th:first-child,td:first-child{text-align:left;white-space:normal}
+thead th{background:#f2f4f7;border-bottom:2px solid #d3d9df;font-size:.82rem;font-weight:650}
+tbody tr:nth-child(even){background:#fafbfc}
+tbody tr:hover{background:#f0f6fc}
+tbody tr:last-child td{border-bottom:0}
+
+figure{margin:2.1rem 0 2.3rem}
+figure a{display:block;text-decoration:none}
+figure img{
+  display:block;margin:0 auto;max-width:100%;height:auto;
+  border:1px solid #e3e7eb;border-radius:6px;background:#fff;
+}
+figcaption{margin-top:.6rem;font-size:.82rem;color:#5b636d;text-align:center}
+figure.wide{grid-column:1/-1;width:min(100rem,calc(100% - 3rem));margin-inline:auto}
+.tablewrap.wide{grid-column:1/-1;justify-self:center;max-width:min(100rem,calc(100% - 3rem))}
+figure.pan{overflow-x:auto;padding-bottom:.35rem}
+figure.pan img{max-width:none;width:auto;height:clamp(18rem,42vh,32rem)}
+
+.toc{margin:0 0 2.75rem;padding:1.05rem 1.35rem;background:#f7f9fb;border:1px solid #e3e7eb;border-radius:8px}
+.toc-title{font-size:.76rem;font-weight:650;letter-spacing:.09em;text-transform:uppercase;color:#5b636d;margin:0 0 .65rem}
+.toc ul{list-style:none;margin:0;padding:0;columns:2;column-gap:2.5rem}
+.toc li{max-width:none;margin:0 0 .32rem;break-inside:avoid;font-size:.895rem}
+.toc li.sub{padding-left:1rem;font-size:.845rem}
+.toc a{color:#2c3239;text-decoration:none}
+.toc a:hover{color:#0b5cad;text-decoration:underline}
+
+@media (max-width:52rem){
+  body{padding:2rem 1.05rem 4rem}
+  h1{font-size:1.6rem}h2{font-size:1.28rem}
+  .toc ul{columns:1}
+  figure.wide{width:100%}
+  .tablewrap.wide{max-width:100%}
+}
+@media print{
+  body{padding:0;font-size:10pt;grid-template-columns:0 100% 0}
+  a{color:inherit;text-decoration:none}
+  h2,h3{break-after:avoid}
+  figure,.tablewrap,tr{break-inside:avoid}
+  .tablewrap,figure.pan{overflow:visible;max-width:100%}
+  table{font-size:8.5pt}
+  figure.pan img{width:auto;height:auto;max-width:100%}
+  thead{display:table-header-group}
+  tbody tr:hover{background:none}
+  .toc{break-after:page}
+}
+</style></head><body><h1>Inoue et al. cancer prognosis reproduction</h1>
+<nav class="toc"><p class="toc-title">Contents</p><ul><li><a href="#reproduction-status">Reproduction status</a></li><li><a href="#table-1-published-and-reproduced-roc-auc">Table 1: published and reproduced ROC-AUC</a></li><li><a href="#threshold-metrics-at-0-5">Threshold metrics at 0.5</a></li><li><a href="#supplementary-table-1-data-audit">Supplementary Table 1: data audit</a></li><li><a href="#reproduction-plots">Reproduction plots</a></li><li><a href="#exact-commands">Exact commands</a></li><li><a href="#ensembl-to-hgnc-conversion-boundary">Ensembl-to-HGNC conversion boundary</a></li><li><a href="#interpretation-scope">Interpretation scope</a></li></ul></nav>
+<h2 id="reproduction-status">Reproduction status</h2>
 <p>Table 1 grid status: <strong>complete</strong>. The workflow covers five verification years, four model variants, five stratified folds, 150 fine-tuning epochs, and the manuscript final-epoch evaluation protocol. Completed fold artifacts are reused.</p>
-<h2>Table 1: published and reproduced ROC-AUC</h2>
-<table><thead><tr><th>year</th><th>paper_dnn</th><th>reproduced_dnn</th><th>delta_dnn</th><th>paper_dnn_cancer</th><th>reproduced_dnn_cancer</th><th>delta_dnn_cancer</th><th>paper_gnn_dnn</th><th>reproduced_gnn_dnn</th><th>delta_gnn_dnn</th><th>paper_gnn_dnn_cancer</th><th>reproduced_gnn_dnn_cancer</th><th>delta_gnn_dnn_cancer</th></tr></thead><tbody><tr><td>1</td><td>0.6312</td><td>0.6078</td><td>-0.0234</td><td>0.7425</td><td>0.7386</td><td>-0.0039</td><td>0.7382</td><td>0.7387</td><td>0.0005</td><td>0.7585</td><td>0.7563</td><td>-0.0022</td></tr><tr><td>2</td><td>0.6168</td><td>0.6032</td><td>-0.0136</td><td>0.7672</td><td>0.7599</td><td>-0.0073</td><td>0.7678</td><td>0.7600</td><td>-0.0078</td><td>0.7596</td><td>0.7842</td><td>0.0246</td></tr><tr><td>3</td><td>0.6188</td><td>0.5970</td><td>-0.0218</td><td>0.7624</td><td>0.7543</td><td>-0.0081</td><td>0.7733</td><td>0.7708</td><td>-0.0025</td><td>0.7890</td><td>0.7843</td><td>-0.0047</td></tr><tr><td>4</td><td>0.6173</td><td>0.5976</td><td>-0.0197</td><td>0.7674</td><td>0.7507</td><td>-0.0167</td><td>0.7714</td><td>0.7651</td><td>-0.0063</td><td>0.7900</td><td>0.7806</td><td>-0.0094</td></tr><tr><td>5</td><td>0.5971</td><td>0.6076</td><td>0.0105</td><td>0.7644</td><td>0.7570</td><td>-0.0074</td><td>0.7581</td><td>0.7461</td><td>-0.0120</td><td>0.7850</td><td>0.7845</td><td>-0.0005</td></tr></tbody></table>
+<h2 id="table-1-published-and-reproduced-roc-auc">Table 1: published and reproduced ROC-AUC</h2>
+<div class="tablewrap wide"><table><thead><tr><th>year</th><th>paper_dnn</th><th>reproduced_dnn</th><th>delta_dnn</th><th>paper_dnn_cancer</th><th>reproduced_dnn_cancer</th><th>delta_dnn_cancer</th><th>paper_gnn_dnn</th><th>reproduced_gnn_dnn</th><th>delta_gnn_dnn</th><th>paper_gnn_dnn_cancer</th><th>reproduced_gnn_dnn_cancer</th><th>delta_gnn_dnn_cancer</th></tr></thead><tbody><tr><td>1</td><td>0.6312</td><td>0.6078</td><td>-0.0234</td><td>0.7425</td><td>0.7386</td><td>-0.0039</td><td>0.7382</td><td>0.7387</td><td>0.0005</td><td>0.7585</td><td>0.7563</td><td>-0.0022</td></tr><tr><td>2</td><td>0.6168</td><td>0.6032</td><td>-0.0136</td><td>0.7672</td><td>0.7599</td><td>-0.0073</td><td>0.7678</td><td>0.7600</td><td>-0.0078</td><td>0.7596</td><td>0.7842</td><td>0.0246</td></tr><tr><td>3</td><td>0.6188</td><td>0.5970</td><td>-0.0218</td><td>0.7624</td><td>0.7543</td><td>-0.0081</td><td>0.7733</td><td>0.7708</td><td>-0.0025</td><td>0.7890</td><td>0.7843</td><td>-0.0047</td></tr><tr><td>4</td><td>0.6173</td><td>0.5976</td><td>-0.0197</td><td>0.7674</td><td>0.7507</td><td>-0.0167</td><td>0.7714</td><td>0.7651</td><td>-0.0063</td><td>0.7900</td><td>0.7806</td><td>-0.0094</td></tr><tr><td>5</td><td>0.5971</td><td>0.6076</td><td>0.0105</td><td>0.7644</td><td>0.7570</td><td>-0.0074</td><td>0.7581</td><td>0.7461</td><td>-0.0120</td><td>0.7850</td><td>0.7845</td><td>-0.0005</td></tr></tbody></table></div>
 <p>NA means that a full condition has not completed. Fold values are exported to outputs/cancer/report/table1_fold_auc.tsv.</p>
-<h2>Threshold metrics at 0.5</h2>
-<table><thead><tr><th>year</th><th>variant</th><th>mean_auc</th><th>mean_accuracy</th><th>mean_precision</th><th>mean_recall</th><th>mean_f1</th></tr></thead><tbody><tr><td>1</td><td>dnn</td><td>0.6078</td><td>0.6300</td><td>0.9119</td><td>0.6481</td><td>0.7397</td></tr><tr><td>1</td><td>dnn_cancer</td><td>0.7386</td><td>0.7194</td><td>0.9373</td><td>0.7326</td><td>0.8219</td></tr><tr><td>1</td><td>gnn_dnn</td><td>0.7387</td><td>0.6298</td><td>0.9481</td><td>0.6168</td><td>0.7452</td></tr><tr><td>1</td><td>gnn_dnn_cancer</td><td>0.7563</td><td>0.6984</td><td>0.9447</td><td>0.7015</td><td>0.8036</td></tr><tr><td>2</td><td>dnn</td><td>0.6032</td><td>0.5498</td><td>0.7877</td><td>0.5297</td><td>0.6249</td></tr><tr><td>2</td><td>dnn_cancer</td><td>0.7599</td><td>0.6879</td><td>0.8609</td><td>0.6873</td><td>0.7615</td></tr><tr><td>2</td><td>gnn_dnn</td><td>0.7600</td><td>0.7005</td><td>0.8569</td><td>0.7120</td><td>0.7752</td></tr><tr><td>2</td><td>gnn_dnn_cancer</td><td>0.7842</td><td>0.6972</td><td>0.8828</td><td>0.6791</td><td>0.7646</td></tr><tr><td>3</td><td>dnn</td><td>0.5970</td><td>0.5682</td><td>0.6485</td><td>0.5814</td><td>0.6072</td></tr><tr><td>3</td><td>dnn_cancer</td><td>0.7543</td><td>0.6813</td><td>0.7581</td><td>0.6802</td><td>0.7140</td></tr><tr><td>3</td><td>gnn_dnn</td><td>0.7708</td><td>0.6798</td><td>0.7908</td><td>0.6364</td><td>0.6918</td></tr><tr><td>3</td><td>gnn_dnn_cancer</td><td>0.7843</td><td>0.6982</td><td>0.7892</td><td>0.6748</td><td>0.7190</td></tr><tr><td>4</td><td>dnn</td><td>0.5976</td><td>0.5633</td><td>0.5257</td><td>0.6155</td><td>0.5600</td></tr><tr><td>4</td><td>dnn_cancer</td><td>0.7507</td><td>0.6920</td><td>0.7133</td><td>0.5682</td><td>0.6287</td></tr><tr><td>4</td><td>gnn_dnn</td><td>0.7651</td><td>0.6805</td><td>0.6704</td><td>0.6698</td><td>0.6545</td></tr><tr><td>4</td><td>gnn_dnn_cancer</td><td>0.7806</td><td>0.7029</td><td>0.6763</td><td>0.6953</td><td>0.6820</td></tr><tr><td>5</td><td>dnn</td><td>0.6076</td><td>0.5452</td><td>0.4104</td><td>0.6707</td><td>0.5053</td></tr><tr><td>5</td><td>dnn_cancer</td><td>0.7570</td><td>0.7073</td><td>0.5778</td><td>0.6255</td><td>0.5992</td></tr><tr><td>5</td><td>gnn_dnn</td><td>0.7461</td><td>0.6034</td><td>0.4876</td><td>0.7777</td><td>0.5822</td></tr><tr><td>5</td><td>gnn_dnn_cancer</td><td>0.7845</td><td>0.7193</td><td>0.5896</td><td>0.6764</td><td>0.6264</td></tr></tbody></table>
+<h2 id="threshold-metrics-at-0-5">Threshold metrics at 0.5</h2>
+<div class="tablewrap wide"><table><thead><tr><th>year</th><th>variant</th><th>mean_auc</th><th>mean_accuracy</th><th>mean_precision</th><th>mean_recall</th><th>mean_f1</th></tr></thead><tbody><tr><td>1</td><td>dnn</td><td>0.6078</td><td>0.6300</td><td>0.9119</td><td>0.6481</td><td>0.7397</td></tr><tr><td>1</td><td>dnn_cancer</td><td>0.7386</td><td>0.7194</td><td>0.9373</td><td>0.7326</td><td>0.8219</td></tr><tr><td>1</td><td>gnn_dnn</td><td>0.7387</td><td>0.6298</td><td>0.9481</td><td>0.6168</td><td>0.7452</td></tr><tr><td>1</td><td>gnn_dnn_cancer</td><td>0.7563</td><td>0.6984</td><td>0.9447</td><td>0.7015</td><td>0.8036</td></tr><tr><td>2</td><td>dnn</td><td>0.6032</td><td>0.5498</td><td>0.7877</td><td>0.5297</td><td>0.6249</td></tr><tr><td>2</td><td>dnn_cancer</td><td>0.7599</td><td>0.6879</td><td>0.8609</td><td>0.6873</td><td>0.7615</td></tr><tr><td>2</td><td>gnn_dnn</td><td>0.7600</td><td>0.7005</td><td>0.8569</td><td>0.7120</td><td>0.7752</td></tr><tr><td>2</td><td>gnn_dnn_cancer</td><td>0.7842</td><td>0.6972</td><td>0.8828</td><td>0.6791</td><td>0.7646</td></tr><tr><td>3</td><td>dnn</td><td>0.5970</td><td>0.5682</td><td>0.6485</td><td>0.5814</td><td>0.6072</td></tr><tr><td>3</td><td>dnn_cancer</td><td>0.7543</td><td>0.6813</td><td>0.7581</td><td>0.6802</td><td>0.7140</td></tr><tr><td>3</td><td>gnn_dnn</td><td>0.7708</td><td>0.6798</td><td>0.7908</td><td>0.6364</td><td>0.6918</td></tr><tr><td>3</td><td>gnn_dnn_cancer</td><td>0.7843</td><td>0.6982</td><td>0.7892</td><td>0.6748</td><td>0.7190</td></tr><tr><td>4</td><td>dnn</td><td>0.5976</td><td>0.5633</td><td>0.5257</td><td>0.6155</td><td>0.5600</td></tr><tr><td>4</td><td>dnn_cancer</td><td>0.7507</td><td>0.6920</td><td>0.7133</td><td>0.5682</td><td>0.6287</td></tr><tr><td>4</td><td>gnn_dnn</td><td>0.7651</td><td>0.6805</td><td>0.6704</td><td>0.6698</td><td>0.6545</td></tr><tr><td>4</td><td>gnn_dnn_cancer</td><td>0.7806</td><td>0.7029</td><td>0.6763</td><td>0.6953</td><td>0.6820</td></tr><tr><td>5</td><td>dnn</td><td>0.6076</td><td>0.5452</td><td>0.4104</td><td>0.6707</td><td>0.5053</td></tr><tr><td>5</td><td>dnn_cancer</td><td>0.7570</td><td>0.7073</td><td>0.5778</td><td>0.6255</td><td>0.5992</td></tr><tr><td>5</td><td>gnn_dnn</td><td>0.7461</td><td>0.6034</td><td>0.4876</td><td>0.7777</td><td>0.5822</td></tr><tr><td>5</td><td>gnn_dnn_cancer</td><td>0.7845</td><td>0.7193</td><td>0.5896</td><td>0.6764</td><td>0.6264</td></tr></tbody></table></div>
 <p>Table 1 compares ROC-AUC because that is the metric the manuscript reports. These are the same folds and the same held-out predictions scored at a fixed 0.5 decision threshold, so they describe the operating point rather than the ranking. The labels are imbalanced and shift with the verification year (88.6% survival at 1 year, 34.9% at 5), so accuracy is not comparable across years; also exported to outputs/cancer/report/table1_threshold_metrics.tsv.</p>
-<h2>Supplementary Table 1: data audit</h2>
-<table><thead><tr><th>year</th><th>total</th><th>death</th><th>survival</th></tr></thead><tbody><tr><td>1</td><td>9484</td><td>1076</td><td>8408</td></tr><tr><td>2</td><td>7308</td><td>1951</td><td>5357</td></tr><tr><td>3</td><td>5915</td><td>2425</td><td>3490</td></tr><tr><td>4</td><td>5036</td><td>2713</td><td>2323</td></tr><tr><td>5</td><td>4492</td><td>2922</td><td>1570</td></tr></tbody></table>
+<h2 id="supplementary-table-1-data-audit">Supplementary Table 1: data audit</h2>
+<div class="tablewrap"><table><thead><tr><th>year</th><th>total</th><th>death</th><th>survival</th></tr></thead><tbody><tr><td>1</td><td>9484</td><td>1076</td><td>8408</td></tr><tr><td>2</td><td>7308</td><td>1951</td><td>5357</td></tr><tr><td>3</td><td>5915</td><td>2425</td><td>3490</td></tr><tr><td>4</td><td>5036</td><td>2713</td><td>2323</td></tr><tr><td>5</td><td>4492</td><td>2922</td><td>1570</td></tr></tbody></table></div>
 <p>The prepared dataset contains 4,448 expression features, 33 cancer types, and a graph with 30,918 stored nodes, 3,673,654 directed edges and 13 relations. Cancer-level counts are in outputs/cancer/report/supplementary_table1_sample_counts.tsv.</p>
-<h2>Reproduction plots</h2>
-<figure><img src="cancer_reproduction_assets/table1_auc_by_year.png" alt="table1_auc_by_year.png"><figcaption>table1_auc_by_year.png</figcaption></figure>
-<figure><img src="cancer_reproduction_assets/table1_auc_delta.png" alt="table1_auc_delta.png"><figcaption>table1_auc_delta.png</figcaption></figure>
-<figure><img src="cancer_reproduction_assets/table1_fold_auc_boxplot.png" alt="table1_fold_auc_boxplot.png"><figcaption>table1_fold_auc_boxplot.png</figcaption></figure>
-<figure><img src="cancer_reproduction_assets/supplementary_table1_sample_counts.png" alt="supplementary_table1_sample_counts.png"><figcaption>supplementary_table1_sample_counts.png</figcaption></figure>
-<figure><img src="cancer_reproduction_assets/figure3a_per_cancer_auc.png" alt="figure3a_per_cancer_auc.png"><figcaption>figure3a_per_cancer_auc.png</figcaption></figure>
-<figure><img src="cancer_reproduction_assets/figure3b_per_cancer_auc_transition.png" alt="figure3b_per_cancer_auc_transition.png"><figcaption>figure3b_per_cancer_auc_transition.png</figcaption></figure>
-<figure><img src="cancer_reproduction_assets/figure2_pretraining_sweep.png" alt="figure2_pretraining_sweep.png"><figcaption>figure2_pretraining_sweep.png</figcaption></figure>
-<figure><img src="cancer_reproduction_assets/table1_training_curves.png" alt="table1_training_curves.png"><figcaption>table1_training_curves.png</figcaption></figure>
-<figure><img src="cancer_reproduction_assets/pretraining_diagnostics.png" alt="pretraining_diagnostics.png"><figcaption>pretraining_diagnostics.png</figcaption></figure>
-<figure><img src="cancer_reproduction_assets/figure4_degree_vs_ig.png" alt="figure4_degree_vs_ig.png"><figcaption>figure4_degree_vs_ig.png</figcaption></figure>
-<h2>Exact commands</h2>
+<h2 id="reproduction-plots">Reproduction plots</h2>
+<figure><a href="cancer_reproduction_assets/table1_auc_by_year.png" title="Open at full size"><img src="cancer_reproduction_assets/table1_auc_by_year.png" alt="Table1 AUC by year" width="1656" height="1027" loading="lazy"></a><figcaption>Table1 AUC by year</figcaption></figure>
+<figure><a href="cancer_reproduction_assets/table1_auc_delta.png" title="Open at full size"><img src="cancer_reproduction_assets/table1_auc_delta.png" alt="Table1 AUC delta" width="1654" height="1027" loading="lazy"></a><figcaption>Table1 AUC delta</figcaption></figure>
+<figure><a href="cancer_reproduction_assets/table1_fold_auc_boxplot.png" title="Open at full size"><img src="cancer_reproduction_assets/table1_fold_auc_boxplot.png" alt="Table1 fold AUC boxplot" width="2075" height="1027" loading="lazy"></a><figcaption>Table1 fold AUC boxplot</figcaption></figure>
+<figure><a href="cancer_reproduction_assets/supplementary_table1_sample_counts.png" title="Open at full size"><img src="cancer_reproduction_assets/supplementary_table1_sample_counts.png" alt="Supplementary table1 sample counts" width="1654" height="1027" loading="lazy"></a><figcaption>Supplementary table1 sample counts</figcaption></figure>
+<figure><a href="cancer_reproduction_assets/figure3a_per_cancer_auc.png" title="Open at full size"><img src="cancer_reproduction_assets/figure3a_per_cancer_auc.png" alt="Figure3a per cancer AUC" width="1601" height="1448" loading="lazy"></a><figcaption>Figure3a per cancer AUC</figcaption></figure>
+<figure class="wide"><a href="cancer_reproduction_assets/figure3b_per_cancer_auc_transition.png" title="Open at full size"><img src="cancer_reproduction_assets/figure3b_per_cancer_auc_transition.png" alt="Figure3b per cancer AUC transition" width="3130" height="1244" loading="lazy"></a><figcaption>Figure3b per cancer AUC transition</figcaption></figure>
+<figure><a href="cancer_reproduction_assets/figure2_pretraining_sweep.png" title="Open at full size"><img src="cancer_reproduction_assets/figure2_pretraining_sweep.png" alt="Figure2 pretraining sweep" width="1656" height="1027" loading="lazy"></a><figcaption>Figure2 pretraining sweep</figcaption></figure>
+<figure><a href="cancer_reproduction_assets/table1_training_curves.png" title="Open at full size"><img src="cancer_reproduction_assets/table1_training_curves.png" alt="Table1 training curves" width="3300" height="3708" loading="lazy"></a><figcaption>Table1 training curves</figcaption></figure>
+<figure><a href="cancer_reproduction_assets/pretraining_diagnostics.png" title="Open at full size"><img src="cancer_reproduction_assets/pretraining_diagnostics.png" alt="Pretraining diagnostics" width="1652" height="1027" loading="lazy"></a><figcaption>Pretraining diagnostics</figcaption></figure>
+<figure><a href="cancer_reproduction_assets/figure4_degree_vs_ig.png" title="Open at full size"><img src="cancer_reproduction_assets/figure4_degree_vs_ig.png" alt="Figure4 degree vs IG" width="1655" height="1237" loading="lazy"></a><figcaption>Figure4 degree vs IG</figcaption></figure>
+<h2 id="exact-commands">Exact commands</h2>
 <pre><code>conda activate gnn
 bash scripts/cancer/reproduce_paper.sh prepare
 bash scripts/cancer/reproduce_paper.sh pretrain
@@ -29,8 +114,8 @@ python scripts/cancer/reproduce_table1.py --gpus 0,1,2
 bash scripts/cancer/reproduce_paper.sh figure2
 bash scripts/cancer/reproduce_paper.sh ig
 bash scripts/cancer/reproduce_paper.sh report</code></pre>
-<p>Preprocessing is a separate step: `pathwaygnn-data cancer-prepare` writes the generic dataset under data_cancer/prepared, and every `pathwaygnn` command then selects it through the `dataset:` block of configs/cancer/dataset.yaml. The Table 1 runner schedules all 20 conditions over GPUs and resumes at fold level. selection: final_epoch follows the manuscript. best_test_auc is only for public-code compatibility and uses the held-out fold for selection.</p>
-<h2>Ensembl-to-HGNC conversion boundary</h2>
-<p>counts_gene.tsv contains 11,285 expression columns but no Ensembl identifier row or column. A separately supplied ordered Ensembl ID file can be mapped by `pathwaygnn-data cancer-map-ids` through MyGene.info, with version stripping, ambiguity flags, and local cache files. Without that missing list and historical MSigDB/LM22 snapshots, the supplied 4,448-gene matrices are the exact compatibility input.</p>
-<h2>Interpretation scope</h2>
+<p>Preprocessing is a separate step: <code>pathwaygnn-data cancer-prepare</code> writes the generic dataset under data_cancer/prepared, and every <code>pathwaygnn</code> command then selects it through the <code>dataset:</code> block of configs/cancer/dataset.yaml. The Table 1 runner schedules all 20 conditions over GPUs and resumes at fold level. selection: final_epoch follows the manuscript. best_test_auc is only for public-code compatibility and uses the held-out fold for selection.</p>
+<h2 id="ensembl-to-hgnc-conversion-boundary">Ensembl-to-HGNC conversion boundary</h2>
+<p>counts_gene.tsv contains 11,285 expression columns but no Ensembl identifier row or column. A separately supplied ordered Ensembl ID file can be mapped by <code>pathwaygnn-data cancer-map-ids</code> through MyGene.info, with version stripping, ambiguity flags, and local cache files. Without that missing list and historical MSigDB/LM22 snapshots, the supplied 4,448-gene matrices are the exact compatibility input.</p>
+<h2 id="interpretation-scope">Interpretation scope</h2>
 <p>The workflow generates Table 1, Supplementary Table 1, Figure 2 sweep, fold and cancer AUC tables, Figure 3 panels, training diagnostics, and Figure 4 when attribution arrays exist. Historical DAVID enrichment p-values depend on an external database release; ranked gene lists are exported, but exact historical p-values are not asserted.</p></body></html>

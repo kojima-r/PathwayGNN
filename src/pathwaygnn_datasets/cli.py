@@ -16,6 +16,7 @@ without any dataset knowledge of its own.
     pathwaygnn-data cancer-report   --config configs/cancer/report.yaml
     pathwaygnn-data tr-report       --config configs/tr/report.yaml
     pathwaygnn-data cdr-report      --config configs/cdr/report.yaml
+    pathwaygnn-data dist-report     --config configs/dist/report.yaml
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ HELP = {
     "cancer-report": "render the Inoue et al. comparison tables, figures and document",
     "tr-report": "render the target-repositioning tables, figures and document",
     "cdr-report": "render the drug-response tables, figures and document",
+    "dist-report": "render the graph-partitioning benchmark tables, figures and document",
 }
 
 
@@ -100,6 +102,10 @@ def _run(command: str, cfg: dict[str, Any]) -> Any:
         from pathwaygnn_datasets.cdr.report import run_cdr_report
 
         return run_cdr_report(cfg)
+    if command == "dist-report":
+        from pathwaygnn_datasets.dist.report import run_dist_report
+
+        return run_dist_report(cfg)
     from pathwaygnn_datasets.tr.report import run_tr_report
 
     return run_tr_report(cfg)

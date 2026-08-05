@@ -37,8 +37,8 @@
 `scripts/*/*.py` は自分でルートに `cd` してから実行します。
 
 ```bash
-pathwaygnn      pretrain|finetune|cv|ig|benchmark  --config <yaml>
-pathwaygnn-data sample-prepare|tr-prepare|cancer-prepare|cdr-prepare|cancer-map-ids|tr-report|cancer-report|cdr-report --config <yaml>
+pathwaygnn      partition|pretrain|finetune|cv|ig|benchmark|dist-benchmark  --config <yaml>
+pathwaygnn-data sample-prepare|tr-prepare|cancer-prepare|cdr-prepare|cancer-map-ids|tr-report|cancer-report|cdr-report|dist-report --config <yaml>
 ```
 
 ---
@@ -88,6 +88,174 @@ dataset:
 出力: `best.pt`（loss 最小）、`last.pt`、`history.json`、`config.json`。
 分散実行は `WORLD_SIZE` / `LOCAL_RANK` 環境変数で自動判定し（`torchrun`）、
 CUDA なら NCCL、なければ Gloo。rank ごとの seed は `seed + rank`、書き込みは rank 0 のみ。
+
+### `training.partition:` — グラフ分割による分散実行（大規模グラフ向け）
+
+`src/pathwaygnn/data/partition.py`。**このブロックがあると `pretrain` は全グラフ forward を
+やめ、METIS 分割のバッチが張る部分グラフだけで1ステップを回します**（Cluster-GCN）。
+1ステップのメモリは `parts_per_batch` で決まり、グラフ全体のサイズに依存しません。
+`dir` を書くことが唯一のスイッチで、ブロックを書かなければ従来の全グラフループのままです
+（数値もビット一致します）。
+
+| キー | 型 | 既定値 | 説明 |
+| --- | --- | --- | --- |
+| `training.partition.dir` | str | （なし＝無効） | 分割ファイルを置くディレクトリ。**書くとグラフ分割モードが有効になる**。 |
+| `training.partition.num_parts` | int | `64` | METIS の分割数。大きいほど1パーティションが小さくなり省メモリだが、**分割で切られるエッジが増える**（下表参照）。 |
+| `training.partition.parts_per_batch` | int | `4` | 1ステップで束ねるパーティション数。**メモリと「1ステップで見えるエッジ数」の主要なつまみ**。 |
+| `training.partition.recursive` | bool | `false` | `false` は multilevel k-way、`true` は再帰2分割。 |
+| `training.partition.shuffle` | bool | `true` | エポックごとにパーティションの並びを混ぜる。**混ぜることで別の組み合わせが同じバッチに入り、切られたエッジも学習に登場するようになる**ので、原則 `true`。 |
+| `training.partition.num_workers` | int | `0` | 分割ファイルはディスクから読むので、実データでは 4 程度にすると先読みされる。 |
+| `training.partition.create` | bool | `true` | `false` にすると**既にある分割しか読まず、グラフを読み込むフォールバックをしない**。グラフがメモリに載らない計算機で実行するときはこれを `false` にする（DistributedGNN の `data: type: reload` に相当）。 |
+| `training.partition.force` | bool | `false` | `true` で既存の分割を無視して作り直す。 |
+
+分割モードでの意味の変化は3点だけです。
+
+- **`training.steps_per_epoch` は無効。** 1エポック＝その rank に割り当てられた
+  パーティションを1周（`num_parts / parts_per_batch / WORLD_SIZE` ステップ）。
+- **`training.batch_size` は「部分グラフ内から引く正例エッジ数」**。
+- **負例の破壊先は部分グラフ内のノードに限られる。** そのステップで埋め込みを計算したのが
+  そのノード集合だけなので、これは手法上の必然です（全グラフループは全ノードから引く）。
+- **`training.balanced_relations` は「その部分グラフに存在する関係」を均等化する。**
+  部分グラフに現れない関係は飛ばすので、実バッチは `batch_size × 存在する関係数`
+  （全グラフループでは `batch_size × num_relations`）で、ステップごとに変わります。
+
+以下は `pathwaygnn dist-benchmark` の実測値の抜粋です。**全68条件と図は
+[docs/dist_report.md](docs/dist_report.md)** にあります（数値を更新するときは
+そのコマンドを再実行してください。手で書き換えないでください）。
+
+`num_parts` の効き方（`data_tr/prepared`、30,895ノード / 3,671,958エッジ）。
+PathwayCommons 由来のグラフはハブが多く密なので、分割で切られるエッジの割合は
+無視できません。**メモリと忠実度のトレードオフとして明示的に選んでください。**
+
+| `num_parts` | 1パーティションのノード数 | パーティション内に残るエッジ | METIS 所要時間 |
+| --- | --- | --- | --- |
+| 8 | 3,862 | 40.3% | 1.0 s |
+| 16 | 1,931 | 34.2% | 1.2 s |
+| 32 | 965 | 27.2% | 1.4 s |
+| 64 | 483 | 22.3% | 1.9 s |
+| 128 | 241 | 17.8% | 2.7 s |
+| 256 | 121 | 13.4% | 3.8 s |
+
+`num_parts: 256` に切った `data_tr` での `parts_per_batch`（エッジ数と「1周で見えるエッジ」は
+1周を通した平均・合計。METIS はノード数を均すのでエッジ数はパーティションごとに大きくばらつき、
+1バッチだけ見ても代表値になりません）:
+
+| `parts_per_batch` | 1ステップのノード数 | 1ステップのエッジ数 | 1周で見えるエッジ | ピークメモリ | 1ステップ |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 121 | 1,924 | 13.4% | 109 MiB | 22.4 ms |
+| 2 | 241 | 3,956 | 13.8% | 110 MiB | 22.8 ms |
+| 4 | 483 | 8,276 | 14.4% | 119 MiB | 23.3 ms |
+| 8 | 965 | 18,327 | 16.0% | 136 MiB | 23.1 ms |
+| 16 | 1,931 | 42,581 | 18.6% | 174 MiB | 23.4 ms |
+| 32 | 3,862 | 109,219 | 23.8% | 263 MiB | 24.6 ms |
+
+メモリ削減が一番効くのは**関係数が多い**場合です（`data_cdr/prepared`、356関係、
+13,606ノード、`parts_per_batch: 1`、`hidden_dim: 64`、RTX PRO 6000）。
+比較のため `data_tr` は13関係で、全グラフでも 1.47 GiB / 30 ms しかかかりません
+（**この設定では分割は不要**）。
+
+| モード | ステップのノード数 | ピークメモリ | 1ステップ | 1周で見えるエッジ | 1周の時間 |
+| --- | --- | --- | --- | --- | --- |
+| 全グラフ（`partition` なし） | 13,606 | 14,450 MiB | 509 ms | 100% | 0.51 s |
+| `num_parts: 8` | 1,701 | 2,017 MiB | 468 ms | 79.7% | 3.8 s |
+| `num_parts: 32` | 425 | 639 MiB | 461 ms | 67.8% | 14.8 s |
+| `num_parts: 64` | 213 | 408 MiB | 470 ms | 55.6% | 30.2 s |
+| `num_parts: 256` | 53 | **255 MiB** | 451 ms | 30.1% | 115.6 s |
+
+**1ステップの時間はほとんど減りません。** `RelationalGIN` は関係ごとに GINConv を1つ
+走らせるので、部分グラフを小さくしても関係数ぶんのカーネル起動は消えません。
+その結果**1周あたりの時間は分割数に比例して増えます**（cdr の 256分割で 227倍）。
+分割は載らないグラフを載せるための手段で、載るグラフを速くするものではありません。
+`torchrun` で rank を増やすと1周のステップが分配されるので、ここが並列化の効きどころです。
+
+---
+
+### `pathwaygnn partition` — グラフを METIS で分割する
+
+`src/pathwaygnn/data/partition.py:run_partitioning`。読むのは `dataset:` ブロックと
+`training.partition:` ブロックだけなので、**設定ファイルは `pretrain` と同じものを使います**。
+
+```bash
+pathwaygnn partition --config configs/tr/pretrain_partitioned.yaml
+```
+
+このコマンドが**グラフ全体をメモリに載せる唯一の工程**です。だから分割は事前学習から
+切り離された別コマンドになっています（グラフが載る計算機で1回だけ実行し、学習側は
+分割ファイルだけを読む）。分割が既にあって設定と整合していれば何もしません。
+
+標準出力は分割の要約（JSON）です。`internal_edge_fraction` が上表の「残るエッジ」、
+`edgeless_parts` は孤立ノードだけで構成され学習から除外されたパーティション数です。
+
+生成物: `<dir>/partitions.json`（マニフェスト）と `<dir>/partition_00000.pt`…。
+マニフェストは `dataset.json` のノード数・関係数・エッジ数とデータセット名を記録するので、
+**データセットを作り直した後に古い分割で学習しようとすると読み込み時に失敗します**
+（`pretrained_checkpoint` の照合と同じ考え方）。
+
+METIS 本体は `pyg-lib` か `torch-sparse` に同梱されているものを使います
+（この順に試し、どちらも無ければインストール方法を示して失敗します）。
+分割の所要時間は 3,671,958 エッジ・256分割で約11秒です。
+
+書き出したチェックポイントの `model_config` は**グラフ全体のノード数**を持つので、
+`cv` / `finetune` / `ig` は分割学習で作った `best.pt` を何も変えずに読めます。
+
+### `pathwaygnn dist-benchmark` — 分割数と計算時間・メモリの関係を測る
+
+`src/pathwaygnn/training/dist_benchmark.py`。`num_parts × parts_per_batch` のグリッドを
+掃いて、1ステップの実測時間とピークメモリを記録します。上の表の出どころがこれです。
+
+```bash
+pathwaygnn dist-benchmark  --config configs/dist/benchmark.yaml   # 計測 → results.json
+pathwaygnn-data dist-report --config configs/dist/report.yaml     # docs/dist_report.{md,html}
+```
+
+| キー | 型 | 既定値 | 説明 |
+| --- | --- | --- | --- |
+| `datasets` | list | （`dataset:` でも可） | `{name, dir}` のリスト。**このコマンドだけ複数データセットを取る**（コスト構造の違いを比較するのが目的なので）。1つだけなら通常の `dataset:` ブロックでもよい。 |
+| `num_parts` | list[int] | `[16, 64, 256]` | 掃く分割数。 |
+| `parts_per_batch` | list[int] | `[1, 4, 16]` | 掃くバッチ幅。`parts_per_batch > num_parts` の組は計測不能なので `skipped` に記録される（黙って落とさない）。 |
+| `model.{hidden_dim,num_layers,dropout}` | | `64` / `2` / `0.1` | `pretrain` と同じ形にしておくと実運用の数値になる。 |
+| `batch_size` | int | `4096` | 1ステップの正例エッジ数。 |
+| `steps` | int | `5` | 計測ステップ数。**中央値**を報告する。 |
+| `warmup` | int | `2` | 計測前に捨てるステップ数（カーネル自動調整とアロケータの暖機）。 |
+| `num_workers` | int | `0` | `0` にしておくと分割ファイルの読み込み時間が計測に現れる（実運用では上げて計算と重ねる）。 |
+| `partition_root` | str | `outputs/dist/partitions` | `num_parts` ごとの分割の置き場。 |
+| `output_dir` | str | （必須） | `results.json` の出力先。 |
+
+計測の性質として押さえておく点:
+
+- **ピークメモリはパラメータ・勾配・optimizer 状態が載った状態で測っています。**
+  活性だけの値ではなく「載るかどうか」を決める値です。CUDA でのみ取得でき、CPU では `null`
+  になります（レポート側もメモリの節を出しません）。
+- **1周（pass）の時間は導出値**で、端から端まで計ったものではありません
+  （`steps_per_pass × (step + load)` の中央値）。グリッド全体を安く再実行できるようにするためです。
+- 計測しているステップは `run_pretraining` と同じ経路で、エッジのサンプリングも
+  `pretrain.partition_edges` をそのまま使っています。
+
+### `pathwaygnn-data dist-report` — ベンチマーク結果を文書にする
+
+`src/pathwaygnn_datasets/dist/report.py`。`results.json` を読んで
+`docs/dist_report.md` と `docs/dist_report.html`、`docs/dist_report_assets/` の図、
+`output_dir` の TSV を書きます。他のレポートと同じく **md と html は同一ソースから生成**され、
+食い違いません（`document.py`）。
+
+文書の構成は「How it was measured →
+**Graphs under test**（各グラフのノード数・関係数・エッジ数・パラメータ数と全グラフ基準値を1つの表に）→
+Cutting the graph with METIS（図＋両グラフの分割コスト表）→
+データセットごとの節（`## Dataset \`cdr\` — GDSC drug response` のように略称と名前の併記。
+5パネル図をその節の中に置き、続く表と対応させています）→ 読み方 → 設定の選び方」です。
+
+| キー | 型 | 既定値 | 説明 |
+| --- | --- | --- | --- |
+| `results` | str | `outputs/dist/benchmark/results.json` | `dist-benchmark` の出力。無ければ実行方法を示して失敗する。 |
+| `labels.<データセット名>.title` | str | （なし＝キーをそのまま表示） | 文書内で使う人間向けの名前（例: `cdr` → 「GDSC drug response」）。**計測ではなく体裁の情報なので、こちら側に置いています**（ラベルの修正で15分の再計測が必要にならないように）。 |
+| `labels.<データセット名>.note` | str | （なし） | そのグラフが何かの説明。「Graphs under test」節に1段落として出力される。 |
+| `output_dir` | str | （必須） | TSV と図の原本。 |
+| `docs_dir` | str | `docs` | 文書の出力先。 |
+| `document` | str | `dist_report` | `<document>.{md,html}` と `<document>_assets/` の名前。 |
+
+このレポートは**データセット固有ではなくエンジンの挙動**を記述しますが、文書生成の仕組みと
+`docs/` の生成物がこのパッケージ側にあるため（かつエンジンは `pathwaygnn_datasets` を
+import できないため）ここに置いています。
 
 ---
 
@@ -398,11 +566,14 @@ sample-level features（`age` / `sex_female` / `stage` / `smoker`）です。
 | ファイル | コマンド |
 | --- | --- |
 | `configs/sample/{dataset,prepare,pretrain,cv,finetune,benchmark,ig}.yaml` | **チュートリアル一式**（CPU、コメント付き。各コマンドの最小例） |
+| `configs/sample/pretrain_partitioned.yaml` | グラフ分割モードの最小例（`pretrain.yaml` を継承） |
 | `configs/tr/{dataset,prepare,pretrain,cv,report}.yaml` | tr の基本一式 |
+| `configs/tr/pretrain_partitioned.yaml` | tr のグラフ分割 + 分散事前学習（`pathwaygnn partition` → `pretrain`） |
 | `configs/tr/{finetune,benchmark,ig}_{kd_inh,oe_act}.yaml` | tr のタスク別設定（`_oe_act` は `_kd_inh` を `defaults` で継承） |
 | `configs/cancer/{dataset,build_processed,prepare,pretrain,pretrain_sweep,cv,ig,report,id_mapping}.yaml` | cancer 再現一式 |
 | `configs/cdr/{dataset,prepare,pretrain,cv,report}.yaml` | cdr の基本一式 |
 | `configs/cdr/{finetune,benchmark,ig}_{drugwise,global}.yaml` | cdr のタスク別設定（`_global` は `_drugwise` を継承） |
+| `configs/dist/{benchmark,report}.yaml` | グラフ分割ベンチマークの計測とレポート（**データセット横断**、`datasets:` リストを取る） |
 | `configs/cdr/upstream.json` | **YAML ではない**。`scripts/cdr/upstream/prepare_data.py` が読む GraphCDRScan 由来の JSON |
 
 ---
@@ -420,6 +591,14 @@ sample-level features（`age` / `sex_female` / `stage` / `smoker`）です。
   古い結果が再利用されます。パラメータを変えたら該当ディレクトリを消してください。
 - **`pretrained_checkpoint` はノード数・関係数を照合する。** データセットを作り直したら
   事前学習もやり直しです（`load_encoder` が明示的に失敗します）。
+- **`training.partition` を書くと `steps_per_epoch` が黙って無効になる。** 1エポックは
+  パーティションを1周する回数で決まります。エポックあたりのステップ数は起動時に
+  `steps_per_epoch_per_rank` として出力されるので、そこで確認してください。
+- **`configs/dist/benchmark.yaml` は `dataset:` ではなく `datasets:` を取る。** 唯一の例外で、
+  コスト構造の違うグラフを比較するのが目的だからです。`defaults: [dataset.yaml]` は使いません。
+- **グラフ分割は数値を変える。** 切られたエッジはそのステップに現れず、負例も部分グラフ内から
+  引かれるため、全グラフループの結果とは一致しません。**大規模グラフのための手段であって、
+  既存の再現結果を出すための設定ではありません**（cancer の公開数値は全グラフループのものです）。
 - **`benchmark` に `device:` を書いても無視される。** sklearn / XGBoost は CPU で走ります。
 - **`use_graph: false` は「グラフ構造を落とすだけ」ではない。** サンプルレベルヘッドは
   遺伝子の値をスカラー1つずつ同じ射影に通してから遺伝子軸で総和するため、ノード埋め込みが

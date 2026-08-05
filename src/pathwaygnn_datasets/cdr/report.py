@@ -21,7 +21,7 @@ import numpy as np
 from sklearn.metrics import roc_auc_score, roc_curve
 
 from pathwaygnn.data.format import GraphDataset
-from pathwaygnn_datasets.document import figures, mdtable, tsv, write_document
+from pathwaygnn_datasets.document import figures, mdtable, repo_path, tsv, write_document
 
 TITLE = "PathwayGNN cancer drug-response report"
 VARIANT_COLORS = {
@@ -700,7 +700,7 @@ def run_cdr_report(cfg: dict[str, Any]) -> dict[str, Any]:
 
 Dataset **{dataset.name}** — the GraphCDRScan corpus (GDSC1 dose response, Cell Model Passports
 mutations, Reactome functional interactions) — prepared from
-`{source.get('source_dir', dataset.root)}` into `{dataset.root}`:
+`{repo_path(source.get('source_dir', dataset.root))}` into `{repo_path(dataset.root)}`:
 {dataset.num_nodes:,} graph nodes, {dataset.manifest['num_edges']:,} directed edges,
 {dataset.num_relations} relation types, {source.get('num_samples', 0):,} samples built from
 {source.get('num_cell_lines', 0)} cell lines x {source.get('num_compounds', 0)} compounds, tasks

@@ -1,0 +1,36 @@
+# Sweep the partition count and record step time and peak memory.
+#
+#   pathwaygnn dist-benchmark --config configs/dist/benchmark.yaml
+#   pathwaygnn-data dist-report --config configs/dist/report.yaml
+#
+# Unlike every other config this one names its datasets in a `datasets:` list
+# instead of a single `dataset:` block: the point of the measurement is to compare
+# graphs whose cost model differs, so one run covers several corpora.
+# Human-readable names for these live in configs/dist/report.yaml, so a label can
+# be fixed without re-measuring.
+datasets:
+  # 356 relations: one full-graph forward runs 356 GINConv blocks per layer, so
+  # this is the corpus where the full-graph loop is most memory-bound.
+  - {name: cdr, dir: data_cdr/prepared}
+  # 13 relations but 3.7 M edges, i.e. the opposite end of the same cost model.
+  - {name: tr, dir: data_tr/prepared}
+
+num_parts: [8, 16, 32, 64, 128, 256]
+parts_per_batch: [1, 2, 4, 8, 16, 32]
+
+# Same shape as configs/{tr,cdr}/pretrain.yaml, so the numbers describe the model
+# the real pre-training runs use.
+model:
+  hidden_dim: 64
+  num_layers: 2
+  dropout: 0.1
+
+batch_size: 4096   # positive edges per step
+steps: 5           # timed steps per configuration; the median is reported
+warmup: 2          # untimed steps first (kernel autotuning, allocator warmup)
+num_workers: 0     # 0 so batch-load time is measured, not hidden by prefetching
+device: auto
+seed: 42
+
+partition_root: outputs/dist/partitions
+output_dir: outputs/dist/benchmark

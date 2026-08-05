@@ -1,0 +1,33 @@
+# Render docs/dist_report.{md,html} from what `pathwaygnn dist-benchmark` measured.
+#
+#   pathwaygnn dist-benchmark  --config configs/dist/benchmark.yaml
+#   pathwaygnn-data dist-report --config configs/dist/report.yaml
+#
+# No `dataset:` block: the benchmark records which corpora it swept, and this
+# command reports whatever is in results.json.
+results: outputs/dist/benchmark/results.json
+
+# What each dataset key actually is, so the document names the graph instead of
+# only printing `cdr`. Keyed by the dataset name in results.json; a key with no
+# entry here falls back to its bare name. These live in the *report* config rather
+# than the benchmark's so that a label can be corrected without re-measuring.
+labels:
+  cdr:
+    title: GDSC drug response
+    note: >-
+      The GraphCDRScan corpus: a Reactome functional-interaction graph, with one
+      sample per (cell line, compound) pair. Its 356 relation types are what make
+      the full-graph forward expensive, because `RelationalGIN` runs one GINConv
+      per relation per layer.
+  tr:
+    title: Target repositioning
+    note: >-
+      The SLGCN-TR corpus: a PathwayCommons graph, classifying perturbation
+      signatures against disease signatures. Far more edges than the drug-response
+      graph but only 13 relation types, so it sits at the opposite end of the same
+      cost model.
+
+output_dir: outputs/dist/report
+# docs/<document>.{md,html} plus docs/<document>_assets/.
+docs_dir: docs
+document: dist_report

@@ -2,7 +2,7 @@
 
 ## What this report covers
 
-Dataset **tr** at `/data1/kojima/PathwayGNN/PathwayGNN/data_tr/processed`, prepared
+Dataset **tr** at `data_tr/processed`, prepared
 into `data_tr/prepared`: 30,895 graph nodes, 3,671,958 directed
 edges, 13 relation types, tasks kd_inh, oe_act. Run status: 4 cross-validation conditions, 2 holdout runs, 2 baseline runs, 2 attribution runs.
 Graph pre-training: 100 epochs, final DistMult loss 0.9667, final pairwise accuracy 0.8669.
@@ -208,29 +208,29 @@ evidence of a disease-specific mechanism; the per-feature table below is the gen
 
 ## Plots
 
-![dataset_composition.png](tr_report_assets/dataset_composition.png)
+![Dataset composition](tr_report_assets/dataset_composition.png)
 
-![pretraining_diagnostics.png](tr_report_assets/pretraining_diagnostics.png)
+![Pretraining diagnostics](tr_report_assets/pretraining_diagnostics.png)
 
-![cv_auc_by_task_variant.png](tr_report_assets/cv_auc_by_task_variant.png)
+![CV AUC by task variant](tr_report_assets/cv_auc_by_task_variant.png)
 
-![cv_fold_auc_boxplot.png](tr_report_assets/cv_fold_auc_boxplot.png)
+![CV fold AUC boxplot](tr_report_assets/cv_fold_auc_boxplot.png)
 
-![cv_roc_curves.png](tr_report_assets/cv_roc_curves.png)
+![CV ROC curves](tr_report_assets/cv_roc_curves.png)
 
-![cv_training_curves.png](tr_report_assets/cv_training_curves.png)
+![CV training curves](tr_report_assets/cv_training_curves.png)
 
-![per_disease_auc_scatter.png](tr_report_assets/per_disease_auc_scatter.png)
+![Per disease AUC scatter](tr_report_assets/per_disease_auc_scatter.png)
 
-![per_disease_auc_vs_samples.png](tr_report_assets/per_disease_auc_vs_samples.png)
+![Per disease AUC vs samples](tr_report_assets/per_disease_auc_vs_samples.png)
 
-![benchmark_vs_gnn.png](tr_report_assets/benchmark_vs_gnn.png)
+![Benchmark vs GNN](tr_report_assets/benchmark_vs_gnn.png)
 
-![finetune_curves.png](tr_report_assets/finetune_curves.png)
+![Finetune curves](tr_report_assets/finetune_curves.png)
 
-![ig_degree_vs_score.png](tr_report_assets/ig_degree_vs_score.png)
+![IG degree vs score](tr_report_assets/ig_degree_vs_score.png)
 
-![ig_top_nodes.png](tr_report_assets/ig_top_nodes.png)
+![IG top nodes](tr_report_assets/ig_top_nodes.png)
 
 ## Exact commands
 

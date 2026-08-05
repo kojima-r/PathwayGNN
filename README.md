@@ -6,7 +6,8 @@ PyTorch / PyTorch Geometric API で1つのエンジンに統合しています�
 
 - `SLGCN-TR`: PathwayCommons と摂動・疾患発現シグネチャ、KD–inhibitory / OE–activatory 分類
 - `SampleLevelGNN`: エッジ予測によるグラフ事前学習とサンプルレベル集約
-- `DistributedGNN`: `torchrun`、`torch.distributed`、DDP による分散事前学習
+- `DistributedGNN`: `torchrun`、`torch.distributed`、DDP による分散事前学習と、
+  大規模グラフ向けの METIS グラフ分割を用いた分散実行（Cluster-GCN、§6.1）
 - `GraphCDRScan`: Reactome機能相互作用グラフと GDSC/CCLP による細胞株×化合物の薬剤感受性予測
 
 旧コードは依存関係として取り込まず、入出力と実験機能を参照して `src/pathwaygnn` に
@@ -29,6 +30,7 @@ PyTorch / PyTorch Geometric API で1つのエンジンに統合しています�
 | [README_data_cancer.md](README_data_cancer.md) / [data_cancer/README.md](data_cancer/README.md) | `data_cancer`（TCGA がん予後）の元データと前処理 |
 | [README_data_cdr.md](README_data_cdr.md) / [data_cdr/README.md](data_cdr/README.md) | `data_cdr`（GDSC 薬剤感受性）の元データと前処理 |
 | [docs/tr_report.md](docs/tr_report.md) / [docs/cancer_reproduction.md](docs/cancer_reproduction.md) / [docs/cdr_report.md](docs/cdr_report.md) | 各データセットの実行・評価結果（生成物） |
+| [docs/dist_report.md](docs/dist_report.md) | **グラフ分割の分割数 × バッチ幅と、計算時間・メモリの関係**（生成物、§6.1） |
 
 ---
 
@@ -409,7 +411,9 @@ rank別エッジサンプリング、分散集約、rank 0 のみのチェック
 
 - `training/pretrain.py` — 唯一の分散ループ。DDP の各 rank は同じグラフ上で異なる
   正例・負例エッジを引き、勾配を all-reduce します（グローバルバッチ = `WORLD_SIZE × batch_size`、
-  seed = `seed + rank`）。
+  seed = `seed + rank`）。`training.partition:` を書くと、全グラフ forward の代わりに
+  **METIS 分割のバッチが張る部分グラフ**で1ステップを回すモードに切り替わり、
+  1ステップのメモリがグラフのサイズから切り離されます（§6.1）。
 - `training/cv.py` — 汎用グリッド、fold単位の再開、グループ別AUC。単一プロセスです
   （`cancer` のグリッドは DDP ではなく、GPU ごとに `cv` を1プロセス起動して分配します）。
 - `training/ig.py` — 埋め込み行列・各 node-level feature の値・sample-level feature への帰属。
@@ -448,6 +452,79 @@ torchrun \
 `best.pt` / `last.pt` は rank 0 のみが保存します。NCCL は GPU、Gloo は CPU で自動選択されます。
 教材データは20ノードしかないので分散の意味がありません（`configs/sample/pretrain.yaml` は
 `device: cpu`）。
+
+### 6.1 グラフ分割による分散実行（大規模グラフ）
+
+上の DDP は**各 rank がグラフ全体を持ちます**。1ステップの活性は
+`ノード数 × hidden_dim × 関係数` で増えるので、rank を増やしてもグラフが大きくなれば
+どこかで載らなくなります。実測では `data_cdr`（13,606ノード・**356関係**）の全グラフ
+forward+backward が **14.1 GiB** です。
+
+グラフ分割モードは Cluster-GCN の考え方でこの上限を外します。グラフを METIS で
+`num_parts` 個に切っておき、1ステップは**そのうち `parts_per_batch` 個が張る部分グラフだけ**を
+計算します。メモリはグラフのサイズではなくバッチで決まり、rank には**互いに素な
+パーティション**が配られます（`DistributedSampler`）。
+
+```bash
+# ① グラフを1回だけ切る（グラフ全体をメモリに載せる唯一の工程）
+pathwaygnn partition --config configs/tr/pretrain_partitioned.yaml
+
+# ② 分割ファイルだけを読んで分散学習する（①②をまとめたのが下のスクリプト）
+NPROC_PER_NODE=4 bash scripts/tr/pretrain_partitioned.sh
+```
+
+実測（`data_cdr`、`num_parts: 64`、`hidden_dim: 64`、RTX PRO 6000。ピークメモリは
+パラメータ・勾配・optimizer 状態が載った状態での値、つまり「載るかどうか」を決める値）:
+
+| モード | 1ステップのノード数 | ピークメモリ | 1ステップ | 1周で見えるエッジ | 1周の時間 |
+| --- | --- | --- | --- | --- | --- |
+| 全グラフ | 13,606 | 14.11 GiB | 509 ms | 100% | 0.51 s |
+| 分割 `parts_per_batch: 1` | 213 | **0.40 GiB** | 470 ms | 55.6% | 30.2 s |
+| 分割 `parts_per_batch: 4` | 850 | 1.06 GiB | 465 ms | 58.0% | 7.5 s |
+| 分割 `parts_per_batch: 8` | 1,701 | 1.93 GiB | 468 ms | 59.6% | 3.8 s |
+| 分割 `parts_per_batch: 16` | 3,402 | 3.67 GiB | 493 ms | 67.0% | 2.0 s |
+
+**この表は「メモリを時間と忠実度で買う」ことを示しています。** 1ステップの時間はほとんど
+減りません（関係ごとに GINConv を1つ走らせるので、部分グラフを小さくしても
+356回のカーネル起動は消えない）。したがって**1周あたりの時間は分割数とともに増えます**。
+分割は「載らないグラフを載せる」ための手段で、載るグラフを速くするものではありません。
+
+参考に `data_tr`（30,895ノードbut **13関係**）では全グラフでも 1.47 GiB / 30 ms しか
+かからないので、この設定では**分割は不要**です。効くのは関係数の多い `cdr` 型、
+あるいはこれより大きなグラフ・大きな `hidden_dim` です。
+分割数 × バッチ幅の全組み合わせ（68条件）の実測は
+**[docs/dist_report.md](docs/dist_report.md)** にあります（`pathwaygnn dist-benchmark` の生成物）。
+
+```bash
+pathwaygnn dist-benchmark   --config configs/dist/benchmark.yaml   # 計測
+pathwaygnn-data dist-report --config configs/dist/report.yaml      # 文書化
+```
+
+教材データでも仕組みだけは10秒で通せます（20ノードを4分割するので分割自体に意味はありません）。
+
+```bash
+pathwaygnn partition --config configs/sample/pretrain_partitioned.yaml
+pathwaygnn pretrain  --config configs/sample/pretrain_partitioned.yaml
+```
+
+分割は `pretrain` から**切り離された別コマンド**です。グラフ全体をメモリに載せるのが
+そこだけなので、載る計算機で1回作り、学習側は分割ファイルしか読みません
+（`training.partition.create: false` にすると、グラフを読むフォールバックを禁止できます）。
+
+**トレードオフは明示的に選んでください。** 分割で切られたエッジはそのステップに現れず、
+負例の破壊先も部分グラフ内のノードに限られるので、**全グラフループと同じ数値にはなりません**。
+PathwayCommons 由来のグラフはハブが多く密で、`data_tr` を256分割すると1周で見えるエッジは
+13.4%、`parts_per_batch: 8` でも16.0%です（`shuffle: true` で毎エポック組み合わせが
+変わるため、切られたエッジも学習の過程では登場します）。キーごとの実測値は
+[README_config.md](README_config.md) §3 の `training.partition:` にあります。
+**大規模グラフを扱うための手段であり、既存の再現結果（cancer の公開数値など）は
+全グラフループのものです。** `training.partition` を書かなければ従来どおりで、
+損失はビット一致します。
+
+なお分割が効くのは事前学習（グラフ側のループ）です。`cv` / `finetune` /
+`ig` のサンプルレベルヘッドは全遺伝子の埋め込みを同時に必要とするため、分割の対象外です。
+分割学習で作った `best.pt` は、チェックポイントがグラフ全体のノード数を持つので
+これらのコマンドから**そのまま**使えます。
 
 ---
 
@@ -584,12 +661,17 @@ seed + task.seed_offset * 1000 + fold + variant.seed_index * 100
 ## 9. テスト
 
 ```bash
-conda run -n gnn python -m pytest          # 53件、数秒、CPU のみ
+conda run -n gnn python -m pytest          # 69件、数秒、CPU のみ
 ```
 
 小さな raw データと合成データセットを `tmp_path` に作り、前処理、汎用形式の読み書き、
 関係別 GIN、エッジ事前学習、dense/sparse node-level feature の等価性、可変長サンプル集約、
 逆伝播、層化分割、`cv` グリッドと fold 再開、`ig` の出力を検証します。
+`tests/test_partition.py` は METIS 分割が全ノード・全エッジをちょうど1回覆うこと、
+パーティションのバッチが**その集合の誘導部分グラフと厳密に一致する**こと（分割をまたぐ
+エッジを落とさないこと）、rank への割り当てが互いに素かつ同ステップ数になること
+（DDP の all-reduce が要求します）、`graph.pt` を消しても分割だけで学習できること、
+そして `training.partition` を書かなければ損失がビット一致することを検証します。
 `data_tr/` `data_cancer/` `data_cdr/` `outputs/` には触れません。
 `tests/test_sample_prepare.py` だけは例外的に**コミット済みの `data_sample/raw` を読み**、
 `scripts/sample/make_raw_data.py` がそれをバイト単位で再生成できることも確認します
@@ -603,17 +685,23 @@ conda run -n gnn python -m pytest          # 53件、数秒、CPU のみ
 src/pathwaygnn/            学習エンジン（データセット非依存）
   data/format.py             汎用データ形式の定義と DatasetWriter
   data/samples.py            タスク → バッチ（dense/sparse の可変長集約）
+  data/partition.py          METIS グラフ分割と、その上の Cluster-GCN ローダ
   models/encoder.py          RelationalGIN、GraphPretrainer、load_encoder
   models/predictor.py        SampleLevelModel（両データセット共通のヘッド）
   training/                  pretrain / cv / finetune / benchmark / ig / metrics / distributed
+                             dist_benchmark（分割数 × バッチ幅の時間・メモリ計測）
 src/pathwaygnn_datasets/   コーパスごとの前処理とレポート
   sample/prepare.py          ★最小の実装例（約240行）
   tr/ cancer/ cdr/           各コーパスの build / prepare / report
+  dist/report.py             グラフ分割ベンチマークの文書化（データセット非依存）
 configs/{sample,tr,cancer,cdr}/   実験設定（dataset.yaml を defaults で取り込む）
 scripts/{sample,tr,cancer,cdr}/   取得・再現スクリプト
 data_sample/               ★コミット済みの教材データ（raw 12 KB）
 data_{tr,cancer,cdr}/      実データ（README.md 以外は Git 管理外）
 docs/                      生成されるレポート（docs/papers/ 以外はすべて生成物）
+                           <名前>.md と <名前>.html は同一ソースから生成。html は
+                           スタイル内蔵・印刷対応で、同階層の <名前>_assets/ だけを
+                           伴えばそのまま配布できます
 outputs/                   学習結果（Git 管理外）
 tests/                     pytest（合成データのみで完結）
 ```

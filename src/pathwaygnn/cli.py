@@ -14,18 +14,22 @@ from typing import Any, Callable
 from pathwaygnn.config import load_config
 
 COMMANDS: dict[str, tuple[str, str]] = {
+    "partition": ("pathwaygnn.data.partition", "run_partitioning"),
     "pretrain": ("pathwaygnn.training.pretrain", "run_pretraining"),
     "finetune": ("pathwaygnn.training.finetune", "run_finetuning"),
     "cv": ("pathwaygnn.training.cv", "run_cv"),
     "ig": ("pathwaygnn.training.ig", "run_ig"),
     "benchmark": ("pathwaygnn.training.benchmark", "run_benchmark"),
+    "dist-benchmark": ("pathwaygnn.training.dist_benchmark", "run_dist_benchmark"),
 }
 HELP = {
+    "partition": "cut the graph into METIS partitions for memory-bounded pre-training",
     "pretrain": "pre-train the relational graph encoder on edge prediction",
     "finetune": "train one train/validation/test split of a task",
     "cv": "stratified k-fold cross-validation over a grid of variants and tasks",
     "ig": "Integrated Gradients attribution for one cross-validation fold",
     "benchmark": "graph-free baselines on the same features",
+    "dist-benchmark": "sweep the partition count and record step time and peak memory",
 }
 
 
