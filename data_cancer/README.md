@@ -9,6 +9,9 @@ TCGA の遺伝子発現プロファイルから、診断後 n 年（n = 1〜5）
 **`data_cancer/` は Git 管理外です**（`.gitignore` 対象は `prepared/`、
 それ以外の実データもサイズの都合でコミットされていません）。
 
+> **初めての方は先に [`../data_sample/README.md`](../data_sample/README.md) のチュートリアル**（60サンプルの合成データ、CPU 2分）を一周すると、以下の
+> 「node-level feature」「task」「groups」「rows」といった用語がすべて具体例つきで理解できます。
+
 ---
 
 ## 1. ディレクトリ構成

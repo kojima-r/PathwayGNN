@@ -8,6 +8,9 @@ __pycache__/
 .vscode/
 
 # Prepared datasets are regenerable from raw data plus the preprocessing code.
+# data_sample/raw/ is the exception that IS committed: it is the 12 KB tutorial
+# corpus (see data_sample/README.md), so a fresh clone can run the pipeline.
+data_sample/prepared/
 data_tr/prepared/
 data_cancer/prepared/
 data_cdr/prepared/

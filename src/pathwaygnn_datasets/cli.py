@@ -6,6 +6,7 @@ before training starts and leave a dataset in the generic
 :mod:`pathwaygnn.data.format` layout, which the ``pathwaygnn`` CLI then consumes
 without any dataset knowledge of its own.
 
+    pathwaygnn-data sample-prepare  --config configs/sample/prepare.yaml
     pathwaygnn-data tr-build-processed --config configs/tr/build_processed.yaml
     pathwaygnn-data tr-prepare      --config configs/tr/prepare.yaml
     pathwaygnn-data cancer-build-processed --config configs/cancer/build_processed.yaml
@@ -26,6 +27,7 @@ from typing import Any
 from pathwaygnn.config import load_config
 
 HELP = {
+    "sample-prepare": "the tutorial corpus data_sample/raw -> dataset `sample` (start here)",
     "tr-build-processed": "LINCS L1000 + CREEDS + PathwayCommons -> the bundle data_tr/processed",
     "tr-prepare": "PathwayCommons + perturbation/disease signatures -> dataset `tr`",
     "cancer-prepare": "TCGA survival bundle -> dataset `cancer`",
@@ -39,6 +41,12 @@ HELP = {
 
 
 def _run(command: str, cfg: dict[str, Any]) -> Any:
+    if command == "sample-prepare":
+        from pathwaygnn_datasets.sample.prepare import prepare_sample_dataset
+
+        return prepare_sample_dataset(
+            cfg.get("source_dir", "data_sample/raw"), cfg["output_dir"]
+        )
     if command == "tr-build-processed":
         from pathwaygnn_datasets.tr.build import build_tr_processed
 

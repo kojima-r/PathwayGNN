@@ -11,6 +11,9 @@
 **`data_tr/raw/` と `data_tr/processed/` は Git 管理外です**（`raw/` は 22 GB、
 うち LINCS の Level 5 行列だけで 23.4 GB のうちの大半）。新規クローンでは §4 の手順で作ります。
 
+> **初めての方は先に [`../data_sample/README.md`](../data_sample/README.md) のチュートリアル**（60サンプルの合成データ、CPU 2分）を一周すると、以下の
+> 「node-level feature」「task」「groups」「rows」といった用語がすべて具体例つきで理解できます。
+
 ---
 
 ## 1. ディレクトリ構成

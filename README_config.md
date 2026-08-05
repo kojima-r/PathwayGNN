@@ -3,9 +3,12 @@
 `configs/` 以下の YAML は、`pathwaygnn`（学習エンジン）と `pathwaygnn-data`（前処理・レポート）の
 両 CLI が読む唯一の入力です。ここでは全キーを、既定値と「どのコマンドが読むか」つきで説明します。
 
-- データセットごとの詳細は [README_data_tr.md](README_data_tr.md) /
+- データセットごとの詳細は [data_sample/README.md](data_sample/README.md) /
+  [README_data_tr.md](README_data_tr.md) /
   [README_data_cancer.md](README_data_cancer.md) / [README_data_cdr.md](README_data_cdr.md)
-- 全体像は [README.md](README.md)
+- 全体像とチュートリアルは [README.md](README.md)
+- **各キーの効き方を最小構成で試すには `configs/sample/` が最短です**（CPU で数十秒、
+  コメント付き。`configs/sample/cv.yaml` は `variants` の2×2アブレーションをそのまま含みます）
 
 ---
 
@@ -35,7 +38,7 @@
 
 ```bash
 pathwaygnn      pretrain|finetune|cv|ig|benchmark  --config <yaml>
-pathwaygnn-data tr-prepare|cancer-prepare|cdr-prepare|cancer-map-ids|tr-report|cancer-report|cdr-report --config <yaml>
+pathwaygnn-data sample-prepare|tr-prepare|cancer-prepare|cdr-prepare|cancer-map-ids|tr-report|cancer-report|cdr-report --config <yaml>
 ```
 
 ---
@@ -53,7 +56,8 @@ pathwaygnn-data tr-prepare|cancer-prepare|cdr-prepare|cancer-map-ids|tr-report|c
 | `output_dir` | str | （必須） | 全コマンド | 成果物の出力先。 |
 
 `dataset.yaml` は各データセットディレクトリに1つだけあり、`dataset:` ブロックだけを持ちます。
-実験設定はこれを `defaults:` で取り込むため、**データセットの切り替えは include 1行**です。
+実験設定はこれを `defaults:` で取り込むため、**データセットの切り替えは include 1行**です
+（`configs/sample/`、`configs/tr/`、`configs/cancer/`、`configs/cdr/` の4組があります）。
 
 ```yaml
 # configs/cdr/dataset.yaml
@@ -137,7 +141,7 @@ variants:
 | キー | 型 | 既定値 | 説明 |
 | --- | --- | --- | --- |
 | `name` | str | （必須） | 出力ディレクトリ名 `<output_dir>/<task>/<name>/fold_<k>/`。 |
-| `use_graph` | bool | （必須） | グラフ encoder のノード埋め込みを遺伝子の値に加算するか。 |
+| `use_graph` | bool | （必須） | グラフ encoder のノード埋め込みを遺伝子の値に加算するか。**`false` は「グラフ構造を使わない」以上の意味を持つ**（下記 §11 の落とし穴）。 |
 | `use_sample_features` | bool | `false` | sample-level feature の分岐を使うか。タスクが sample-level feature を持たない場合は `true` にできない。 |
 | `seed_index` | int | リスト中の位置 | seed の variant 成分。**位置ではなくこの値で決まる**ため、1条件だけ単独実行してもグリッド全体と同じ seed になる。 |
 | `end_to_end` | bool | `training.end_to_end` | variant 単位の上書き。 |
@@ -250,6 +254,23 @@ sample-level featureを横に連結して sklearn / XGBoost にかけます。**
 ## 8. 前処理コマンド（`pathwaygnn-data`）
 
 これらは `dataset:` ブロックを持ちません。生データを読んで**汎用形式を書き出す**だけです。
+
+### `sample-prepare`（`configs/sample/prepare.yaml`）
+
+チュートリアル用の合成コーパス `data_sample/raw`（Git 管理下、12 KB）を汎用形式にします。
+**このリポジトリで最小の前処理**で、自分のデータを足すときの雛形です
+（詳細は [data_sample/README.md](data_sample/README.md)）。
+
+| キー | 型 | 既定値 | 説明 |
+| --- | --- | --- | --- |
+| `source_dir` | str | `data_sample/raw` | `graph.tsv` / `expression.tsv` / `tissue_signature.tsv` / `samples.tsv` の置き場。 |
+| `output_dir` | str | （必須） | 書き出し先（`data_sample/prepared`）。 |
+
+生成物は node-level feature `expression`（dense）と `tissue_signature`（sparse）、
+task `responder`（60サンプル）と `relapse`（48サンプル）、groups（組織3種）、
+sample-level features（`age` / `sex_female` / `stage` / `smoker`）です。
+`samples.tsv` にラベル列を足せばタスクが増えます（`src/pathwaygnn_datasets/sample/prepare.py`
+の `LABEL_COLUMNS`）。raw の再生成は `python scripts/sample/make_raw_data.py` です。
 
 ### `tr-build-processed`（`configs/tr/build_processed.yaml`）
 
@@ -376,6 +397,7 @@ sample-level featureを横に連結して sklearn / XGBoost にかけます。**
 
 | ファイル | コマンド |
 | --- | --- |
+| `configs/sample/{dataset,prepare,pretrain,cv,finetune,benchmark,ig}.yaml` | **チュートリアル一式**（CPU、コメント付き。各コマンドの最小例） |
 | `configs/tr/{dataset,prepare,pretrain,cv,report}.yaml` | tr の基本一式 |
 | `configs/tr/{finetune,benchmark,ig}_{kd_inh,oe_act}.yaml` | tr のタスク別設定（`_oe_act` は `_kd_inh` を `defaults` で継承） |
 | `configs/cancer/{dataset,build_processed,prepare,pretrain,pretrain_sweep,cv,ig,report,id_mapping}.yaml` | cancer 再現一式 |
@@ -399,3 +421,10 @@ sample-level featureを横に連結して sklearn / XGBoost にかけます。**
 - **`pretrained_checkpoint` はノード数・関係数を照合する。** データセットを作り直したら
   事前学習もやり直しです（`load_encoder` が明示的に失敗します）。
 - **`benchmark` に `device:` を書いても無視される。** sklearn / XGBoost は CPU で走ります。
+- **`use_graph: false` は「グラフ構造を落とすだけ」ではない。** サンプルレベルヘッドは
+  遺伝子の値をスカラー1つずつ同じ射影に通してから遺伝子軸で総和するため、ノード埋め込みが
+  加算されない `use_graph: false` では**どの値がどの遺伝子のものか区別できません**
+  （値の集合しか見ない）。ノード埋め込みが遺伝子IDの役割も兼ねているからです。
+  遺伝子ごとに重みを持つグラフなしベースラインが必要なら `pathwaygnn benchmark`
+  （Logistic Regression / Random Forest / XGBoost）を使ってください。
+  `configs/sample/cv.yaml` を実行すると、この差が AUC 0.37 対 0.97 として観察できます。
