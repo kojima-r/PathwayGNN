@@ -1,0 +1,31 @@
+defaults:
+  - dataset.yaml
+
+seed: 42
+device: cpu
+
+dataset:
+  task: responder     # one task only; `finetune` is a single split, not a grid
+
+# 60 samples -> 36 train / 12 validation / 12 test, stratified by label.
+split: [0.6, 0.2, 0.2]
+pretrained_checkpoint: outputs/sample/pretrain/best.pt
+
+variant:
+  use_graph: true
+  use_sample_features: true
+
+model:
+  hidden_dim: 32
+  dropout: 0.0
+  block: plain
+
+training:
+  epochs: 80
+  batch_size: 16
+  learning_rate: 0.003
+  weight_decay: 0.0001
+  patience: 20        # epochs without a new best validation AUC
+  train_encoder: false  # keep the pre-trained embeddings frozen
+
+output_dir: outputs/sample/finetune/responder

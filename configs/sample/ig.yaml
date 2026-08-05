@@ -1,0 +1,24 @@
+# Integrated Gradients for one cross-validation fold. Because the labels of the
+# toy corpus are a known function of the GROWTH and IMMUNE genes, the rankings
+# this writes can be checked against the answer: NOISE* genes should rank low.
+defaults:
+  - dataset.yaml
+
+seed: 42
+device: cpu
+
+dataset:
+  task: responder
+
+# Which fold to attribute: <run_dir>/<task>/<variant>/fold_<fold>/model.pt,
+# written by `pathwaygnn cv`. The model shape is read from that checkpoint.
+run_dir: outputs/sample/cv
+variant: gnn_mlp_cov
+fold: 0
+pretrained_checkpoint: outputs/sample/pretrain/best.pt
+output_dir: outputs/sample/ig/responder_fold0
+
+steps: 25          # integration steps; each one is a full-graph forward+backward
+max_samples: null  # all 20 held-out samples of the fold (null = no cap)
+top_k: 20          # 20 nodes in total, so every node appears in the rankings
+per_group_rankings: true   # one extra ranking per tissue (3 files)

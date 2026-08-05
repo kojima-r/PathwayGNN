@@ -1,0 +1,10 @@
+# pathwaygnn-data sample-prepare
+#
+# The tutorial corpus is committed to the repository, so this is the only
+# preprocessing step: four TSV files -> the generic format the engine reads.
+# The real corpora insert a `processed/` stage in between because their raw
+# downloads are large and messy (see configs/{tr,cancer}/build_processed.yaml).
+#
+# Regenerate the raw files with `python scripts/sample/make_raw_data.py`.
+source_dir: data_sample/raw
+output_dir: data_sample/prepared

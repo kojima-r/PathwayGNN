@@ -1,0 +1,23 @@
+defaults:
+  - dataset.yaml
+
+seed: 42
+# The graph has 20 nodes, so a GPU would spend more time launching kernels than
+# computing. The real corpora leave this at `auto`.
+device: cpu
+
+model:
+  hidden_dim: 32     # node embedding width; also the width the head receives
+  num_layers: 2      # one GINConv per relation per layer -> 3 x 2 = 6 convolutions
+  dropout: 0.1
+
+training:
+  epochs: 50
+  steps_per_epoch: 8   # cost is per step, not per sample: 8 x 32 = 256 edges/epoch
+  batch_size: 32       # positive edges per step (the graph has 54 directed edges)
+  learning_rate: 0.01
+  weight_decay: 0.0001
+
+# best.pt / last.pt / history.json. `pretrained_checkpoint:` in the other
+# configs points at best.pt.
+output_dir: outputs/sample/pretrain

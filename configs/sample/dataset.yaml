@@ -1,0 +1,8 @@
+# The tutorial dataset. Include this file to select it:
+#   defaults: [dataset.yaml]
+# `name` is checked against data_sample/prepared/dataset.json, so a config that
+# points at the wrong directory fails when the data is opened instead of training
+# on it. This is the only block that has to change to switch corpus.
+dataset:
+  name: sample
+  dir: data_sample/prepared

@@ -1,0 +1,48 @@
+defaults:
+  - dataset.yaml
+
+seed: 42
+device: cpu
+# 60 samples: 3 folds leave 20 held-out samples per fold, which is enough for a
+# per-tissue AUC (about 7 samples per tissue). 5 folds would leave 4 per tissue.
+folds: 3
+
+dataset:
+  # Both tasks bind the same two aliases (`expression`, `tissue_signature`), so
+  # one `model:` block below covers both. This is why the cancer grid can run
+  # 1year...5year from a single config.
+  tasks: [responder, relapse]
+
+pretrained_checkpoint: outputs/sample/pretrain/best.pt
+
+model:
+  hidden_dim: 32
+  dropout: 0.0
+  block: plain        # Linear-ELU-Linear. `paper` adds a second ELU (+BatchNorm).
+  batch_norm: false
+
+training:
+  epochs: 60
+  batch_size: 16
+  learning_rate: 0.003
+  weight_decay: 0.0001
+  shuffle: true
+  # The graph is tiny, so re-running the encoder every step is affordable and the
+  # graph is trained together with the head. `false` computes the embeddings once
+  # per fold and is what the large corpora use.
+  end_to_end: true
+  loss_reduction: mean
+  # Both labels are balanced by construction (30/30 and 24/24), so no pos_weight.
+  scheduler_patience: 10
+  selection: final_epoch   # not `best_test_auc`, which would select on the held-out fold
+  resume: true             # delete a fold_<k>/ directory to force a rerun
+
+# The 2x2 ablation: graph on/off x sample-level features on/off. `seed_index`
+# makes each condition's fold seeds independent of its position in this list.
+variants:
+  - {name: mlp,         use_graph: false, use_sample_features: false, seed_index: 0}
+  - {name: mlp_cov,     use_graph: false, use_sample_features: true,  seed_index: 1}
+  - {name: gnn_mlp,     use_graph: true,  use_sample_features: false, seed_index: 2}
+  - {name: gnn_mlp_cov, use_graph: true,  use_sample_features: true,  seed_index: 3}
+
+output_dir: outputs/sample/cv
