@@ -19,8 +19,10 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "finetune": ("pathwaygnn.training.finetune", "run_finetuning"),
     "cv": ("pathwaygnn.training.cv", "run_cv"),
     "ig": ("pathwaygnn.training.ig", "run_ig"),
+    "pred": ("pathwaygnn.training.predict", "run_prediction"),
     "benchmark": ("pathwaygnn.training.benchmark", "run_benchmark"),
     "dist-benchmark": ("pathwaygnn.training.dist_benchmark", "run_dist_benchmark"),
+    "hg": ("pathwaygnn.hub", "run_hub_upload"),
 }
 HELP = {
     "partition": "cut the graph into METIS partitions for memory-bounded pre-training",
@@ -28,8 +30,10 @@ HELP = {
     "finetune": "train one train/validation/test split of a task",
     "cv": "stratified k-fold cross-validation over a grid of variants and tasks",
     "ig": "Integrated Gradients attribution for one cross-validation fold",
+    "pred": "score a prepared dataset with a trained checkpoint and write the table",
     "benchmark": "graph-free baselines on the same features",
     "dist-benchmark": "sweep the partition count and record step time and peak memory",
+    "hg": "publish a trained checkpoint to the HuggingFace Hub",
 }
 
 

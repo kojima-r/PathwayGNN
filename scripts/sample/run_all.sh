@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The whole tutorial in one command: data_sample/raw -> prepared -> pre-training
-# -> cross-validation -> single split -> graph-free baselines -> attribution.
+# -> cross-validation -> single split -> graph-free baselines -> attribution
+# -> prediction table.
 #
 # CPU only, about 3 minutes end to end. Everything it writes lives under
 # data_sample/prepared/ and outputs/sample/, both of which are .gitignored, so
@@ -23,5 +24,7 @@ DATA=(python -m pathwaygnn_datasets.cli)
 # Baselines need the extra dependencies: pip install -e '.[benchmark]'
 "${RUN[@]}" benchmark --config configs/sample/benchmark.yaml
 "${RUN[@]}" ig        --config configs/sample/ig.yaml
+# Scores the corpus itself, because the repository ships no external data.
+"${RUN[@]}" pred      --config configs/sample/pred.yaml
 
 python scripts/sample/summarize.py

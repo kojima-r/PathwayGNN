@@ -1,0 +1,44 @@
+# Score a prepared dataset with a trained checkpoint and write the prediction table.
+#
+#   pathwaygnn pred --config configs/tr/pred_oe_act.yaml
+#
+# The `dataset:` block is the data being predicted on. For new gene/disease pairs,
+# prepare them into the generic format over the *same* PathwayCommons graph and
+# point `dir:` at that directory; nothing else here changes.
+#
+#   dataset:
+#     name: tr
+#     dir:  data_tr_new/prepared
+#     task: oe_act
+#
+# **There is no external corpus in this repository**, so this points at
+# `data_tr/prepared` itself. The reported metrics therefore cover rows this fold was
+# trained on and are not an evaluation of the model — `pathwaygnn cv` and
+# `docs/tr_report.md` hold the held-out numbers.
+defaults:
+  - dataset.yaml
+
+device: auto
+
+dataset:
+  task: oe_act
+
+# A `cv` fold's model.pt, the other accepted checkpoint form (a `finetune` best.pt
+# works identically). This is the best fold of the graph variant in the shipped run
+# (held-out AUC 0.79); `outputs/tr/cv/oe_act/mlp/...` is the graph-free one and needs
+# no `pretrained_checkpoint` at all.
+#
+# `oe_act` rather than `kd_inh` deliberately: in the shipped run every `kd_inh` fold
+# collapsed to a constant probability (held-out AUC 0.50, visible in
+# docs/tr_report.md), so it would make a misleading example. `pred` reproduces such a
+# checkpoint faithfully — a constant in, a constant out — which is exactly why the
+# example should not be one.
+checkpoint: outputs/tr/cv/oe_act/gnn_mlp/fold_2/model.pt
+pretrained_checkpoint: outputs/tr/pretrain/best.pt
+
+batch_size: 256
+num_workers: 4      # 3,465 samples here; kd_inh has 61,101, where this matters more
+threshold: 0.5
+preview_rows: 10
+
+output_dir: outputs/tr/pred/oe_act

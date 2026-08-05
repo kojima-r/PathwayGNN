@@ -37,7 +37,7 @@
 `scripts/*/*.py` は自分でルートに `cd` してから実行します。
 
 ```bash
-pathwaygnn      partition|pretrain|finetune|cv|ig|benchmark|dist-benchmark  --config <yaml>
+pathwaygnn      partition|pretrain|finetune|cv|ig|pred|benchmark|dist-benchmark|hg  --config <yaml>
 pathwaygnn-data sample-prepare|tr-prepare|cancer-prepare|cdr-prepare|cancer-map-ids|tr-report|cancer-report|cdr-report|dist-report --config <yaml>
 ```
 
@@ -309,7 +309,7 @@ variants:
 | キー | 型 | 既定値 | 説明 |
 | --- | --- | --- | --- |
 | `name` | str | （必須） | 出力ディレクトリ名 `<output_dir>/<task>/<name>/fold_<k>/`。 |
-| `use_graph` | bool | （必須） | グラフ encoder のノード埋め込みを遺伝子の値に加算するか。**`false` は「グラフ構造を使わない」以上の意味を持つ**（下記 §11 の落とし穴）。 |
+| `use_graph` | bool | （必須） | グラフ encoder のノード埋め込みを遺伝子の値に加算するか。**`false` は「グラフ構造を使わない」以上の意味を持つ**（下記 §13 の落とし穴）。 |
 | `use_sample_features` | bool | `false` | sample-level feature の分岐を使うか。タスクが sample-level feature を持たない場合は `true` にできない。 |
 | `seed_index` | int | リスト中の位置 | seed の variant 成分。**位置ではなくこの値で決まる**ため、1条件だけ単独実行してもグリッド全体と同じ seed になる。 |
 | `end_to_end` | bool | `training.end_to_end` | variant 単位の上書き。 |
@@ -419,7 +419,137 @@ sample-level featureを横に連結して sklearn / XGBoost にかけます。**
 
 ---
 
-## 8. 前処理コマンド（`pathwaygnn-data`）
+## 8. `pathwaygnn pred` — 学習済みモデルで予測表を出力する
+
+`src/pathwaygnn/training/predict.py`。**`dataset:` で指定したデータに学習済みチェックポイントを
+適用し、予測結果の表を書き出します。** `cv` / `finetune` / `ig` が学習したコーパスの中で
+完結するのに対し、こちらは「学習後に用意した別データを同じグラフの上で採点する」ための
+コマンドです。
+
+```bash
+pathwaygnn pred --config configs/sample/pred.yaml     # 教材データ（CPU、数秒）
+pathwaygnn pred --config configs/tr/pred_oe_act.yaml  # 実データ
+```
+
+| キー | 型 | 既定値 | 説明 |
+| --- | --- | --- | --- |
+| `dataset.dir` / `dataset.name` / `dataset.task` | str | （必須） | **予測対象のデータ**。別ディレクトリを指すのが本来の使い方。 |
+| `checkpoint` | str | （必須） | `finetune` の `best.pt` か `cv` の fold の `model.pt`。ヘッドの形状（`model_config`）、fine-tune 済み encoder、variant、**学習時の sample-level feature の平均・標準偏差**を含む。 |
+| `pretrained_checkpoint` | str | （`use_graph: true` のとき必須） | encoder を復元する `pretrain` の出力。**ノード数・関係数が合わなければ読み込み時に失敗**する（別グラフのデータを採点してしまう事故の防止）。 |
+| `batch_size` | int | `64` | 推論のバッチサイズ。 |
+| `num_workers` | int | `0` | DataLoader のワーカー数。 |
+| `threshold` | float | `0.5` | この確率以上を `prediction = 1` とする。**確率そのものは変わりません**。 |
+| `preview_rows` | int | `10` | 標準出力に整形表示する行数（表の全体は常に TSV に出ます）。 |
+| `device` | str | `auto` | `cpu` 指定で CPU を強制。 |
+
+出力（`output_dir`）:
+
+| ファイル | 内容 |
+| --- | --- |
+| `predictions.tsv` | **予測結果の表**。`sample_index` / `probability` / `prediction` / `label`（使える場合）/ `group` / `row_<alias>`（各 node-level feature の参照行） |
+| `predictions_by_group.tsv` | グループ別の集計（件数・陽性予測数・陽性率、ラベルがあれば正解数と accuracy） |
+| `predictions.npz` | 同じ内容の配列（`sample_index` / `probability` / `prediction` / `label`） |
+| `summary.json` | 件数・閾値・確率の min/mean/max、`trained_on`（**チェックポイントの学習元**データセットとタスク）、指標 |
+
+外部データを扱うときに効いている設計上の判断が3つあります。
+
+- **ヘッドとタスクの整合性を実行前に検査する。** `model_config.node_features`（alias の**順序**込み）が
+  対象タスクの alias 一覧と一致しなければ**エラーで停止**します。ヘッドの連結順は alias 順で
+  固定されているため、不一致のまま動かすと「もっともらしい値を間違った入力から」出してしまいます。
+- **sample-level feature の標準化はチェックポイントの平均・標準偏差を使う。** 予測対象データから
+  再計算すると入力分布が静かに変わり、1サンプルだけの予測も不可能になります。
+- **ラベルは1クラスしかなければ指標を出さない。** 汎用形式は `labels.npy` を必須にしているので、
+  予測対象データのラベルはダミーであり得ます。その場合 `metrics` は `null` になり、
+  `label` 列自体を出しません（0 の列を正解らしく見せない）。
+  チェックポイントの学習元と対象データセットが違うことは**エラーにせず** `trained_on` に記録します
+  （それがこのコマンドの目的だからです）。
+
+**同梱の設定は「自分自身のデータセット」を指しています**（このリポジトリに外部データがないため）。
+`configs/sample/pred.yaml` はチュートリアル直後にそのまま動きますが、60行のうち48行がその
+モデルの学習・検証に使われた行なので、**表示される指標はモデルの評価ではなく配線の確認**です。
+実際の評価値は `outputs/sample/finetune/responder/metrics.json` の test 側にあり、
+**同じ行に対して `pred` を走らせるとその値を完全に再現します**
+（`tests/test_predict.py` で固定しています。実データの `tr` fold でも、`cv` が保存した
+held-out 予測と 1e-6（GPU の scatter-add 非決定性の範囲）で一致することを確認しています）。
+
+---
+
+## 9. `pathwaygnn hg` — HuggingFace Hub への公開と、公開モデルからの再開
+
+`src/pathwaygnn/hub.py`。方向は2つですが、参照の書き方は1つです。
+
+```bash
+pathwaygnn hg --config configs/sample/hub.yaml   # 事前学習後 / finetune後のチェックポイントを公開
+pathwaygnn hg --config configs/tr/hub.yaml       # 実データの encoder を公開
+```
+
+オプション依存です（`pip install -e '.[hub]'`）。**`dry_run: true` なら
+`huggingface_hub` も不要**で、アップロードされる内容一式を `output_dir` に組み立てるだけです。
+
+### 公開する側の設定
+
+| キー | 型 | 既定値 | 説明 |
+| --- | --- | --- | --- |
+| `checkpoint` | str | （必須） | 公開するチェックポイント。**種別は自動判別**します（`pretrain` の `best.pt` → `kind: encoder`、`finetune`/`cv` の → `kind: head`）。`hf://` 参照も可（再公開）。 |
+| `repo_id` | str | （必須） | `<owner>/<name>`。**自分のアカウントに書き換えてください**。 |
+| `private` | bool | `true` | **既定は非公開**。公開は明示的な選択にしています。 |
+| `dry_run` | bool | 設定ファイル側で `true` | `true` の間は**マシンの外に何も出ません**。`output_dir` に payload を組み立てるだけなので、公開前に中身を確認できます。 |
+| `extra_files` | list[str] | `[]` | 一緒に置くファイル（`history.json`、`metrics.json` など）。**staging 前に存在チェック**します。 |
+| `license` / `title` / `notes` | str | `mit` / repo_id / なし | モデルカードに入る情報。 |
+| `token` | str | （なし） | 認証。**設定ファイルに書かず** `hf auth login` か `HF_TOKEN` を推奨。 |
+| `revision` / `commit_message` | str | なし / 自動生成 | アップロード先のブランチとコミットメッセージ。 |
+| `output_dir` | str | （必須） | staging 先。 |
+
+生成物（= アップロードされる内容）:
+
+| ファイル | 内容 |
+| --- | --- |
+| `model.pt` | チェックポイントをそのままコピー（バイト一致） |
+| `pathwaygnn.json` | 機械可読なマニフェスト。種別・データセット・タスク・`model_config`・variant・由来 |
+| `README.md` | モデルカード。**そのまま貼れる設定行**を「Usage」に含みます |
+| （`extra_files`） | 由来として添付したファイル |
+
+### 公開モデルから始める側（新しいコマンドは不要）
+
+チェックポイントを指すキーは**すべて** `hf://` 参照を受け付けます
+（`pretrained_checkpoint`、`pred` の `checkpoint`、`pretrain` の `resume_from`）。
+
+```text
+hf://<owner>/<name>[/<repo内のパス>][@<revision>]
+```
+
+パスの既定値は `model.pt`（公開側がその名前で書くため）。最初の2セグメントが repo id です。
+
+```yaml
+# configs/tr/cv.yaml など
+pretrained_checkpoint: hf://your-account/pathwaygnn-tr-encoder/model.pt
+# 版を固定したいとき
+pretrained_checkpoint: hf://your-account/pathwaygnn-tr-encoder/model.pt@v1
+```
+
+### `pretrain` の `resume_from` — 事前学習の再開
+
+| キー | 型 | 既定値 | 説明 |
+| --- | --- | --- | --- |
+| `resume_from` | str | （なし＝新規学習） | `pretrain` のチェックポイント（ローカルパスか `hf://` 参照）。**`training.epochs` は「ここから追加で回すエポック数」**になります。 |
+
+再開時に復元するのは、encoder と relation の重み、**optimizer の状態（Adam のモーメント）**、
+エポック番号、グローバル RNG、そして**エッジサンプラの乱数ストリーム**です。その結果
+**中断せずに回した場合とビット一致します**（`tests/test_hub.py::test_resuming_reproduces_an_uninterrupted_run` で固定）。
+
+- **公開側の形状が優先されます。** `resume_from` があるとき `model:` ブロックの
+  `hidden_dim` / `num_layers` / `dropout` はチェックポイントの値で上書きされます
+  （公開モデルが手元の設定で静かに作り替えられないように）。
+- ノード数・関係数が合わなければ**読み込み時に失敗**します。head（`finetune`/`cv` の出力）を
+  `resume_from` に渡した場合も明示的に失敗します。
+- サンプラのストリームは**この機能より前に作られたチェックポイントには入っていません**。
+  その場合は seed をずらして再開し（同じエポックを引き直さないため）、
+  起動時のログに `"resumed_sampling_stream": false` と出ます。GPU で保存したストリームを
+  CPU で再開する場合も同様です。
+
+---
+
+## 10. 前処理コマンド（`pathwaygnn-data`）
 
 これらは `dataset:` ブロックを持ちません。生データを読んで**汎用形式を書き出す**だけです。
 
@@ -522,7 +652,7 @@ sample-level features（`age` / `sex_female` / `stage` / `smoker`）です。
 
 ---
 
-## 9. レポートコマンド
+## 11. レポートコマンド
 
 3つのレポートはいずれも `pathwaygnn_datasets/document.py` を通して Markdown と単体 HTML を
 同じ本文から生成するため、両者が食い違うことはありません。**`docs/` 以下は `docs/papers/` を
@@ -561,11 +691,13 @@ sample-level features（`age` / `sex_female` / `stage` / `smoker`）です。
 
 ---
 
-## 10. 設定ファイル一覧
+## 12. 設定ファイル一覧
 
 | ファイル | コマンド |
 | --- | --- |
 | `configs/sample/{dataset,prepare,pretrain,cv,finetune,benchmark,ig}.yaml` | **チュートリアル一式**（CPU、コメント付き。各コマンドの最小例） |
+| `configs/sample/hub.yaml` / `configs/tr/hub.yaml` | `hg` の設定（**既定は `dry_run: true`、`private: true`**） |
+| `configs/sample/pred.yaml` / `configs/tr/pred_oe_act.yaml` | `pred` の設定（**外部データがないので自分自身のデータセットを指定**） |
 | `configs/sample/pretrain_partitioned.yaml` | グラフ分割モードの最小例（`pretrain.yaml` を継承） |
 | `configs/tr/{dataset,prepare,pretrain,cv,report}.yaml` | tr の基本一式 |
 | `configs/tr/pretrain_partitioned.yaml` | tr のグラフ分割 + 分散事前学習（`pathwaygnn partition` → `pretrain`） |
@@ -578,7 +710,7 @@ sample-level features（`age` / `sex_female` / `stage` / `smoker`）です。
 
 ---
 
-## 11. よくある落とし穴
+## 13. よくある落とし穴
 
 - **キーのタイプミスは沈黙する。** スキーマ検証がないため、`traning:` と書いても
   エラーにならず、`training` の既定値が全部使われます。実行ログの1エポック目の値が

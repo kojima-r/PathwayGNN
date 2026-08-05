@@ -18,6 +18,7 @@ from pathwaygnn.data.partition import (
     ensure_partitions,
     partition_settings,
 )
+from pathwaygnn.hub import resolve_checkpoint
 from pathwaygnn.models.encoder import GraphPretrainer, RelationalGIN, encoder_config
 from pathwaygnn.training.distributed import DistributedContext, finalize, initialize
 
@@ -35,11 +36,17 @@ def partition_edges(
     The same objective as the full-graph loop, with one difference forced by the
     method: a corrupted destination is drawn from the **subgraph's** nodes, because
     those are the only nodes this step computed an embedding for.
+
+    Returns three tensors indexed **locally** to ``batch`` (``K`` scored edges):
+    positive int64 ``[2, K]``, its relation types int64 ``[K]``, and negative
+    int64 ``[2, K]`` (positive with row 1 replaced). ``K`` is ``batch_size``, or
+    ``batch_size`` x the relations present when ``balanced``.
     """
     if balanced:
         # A subgraph need not carry every relation; balancing covers those it has.
         present = [torch.where(batch.edge_type == relation)[0] for relation in range(num_relations)]
         chosen = torch.cat([
+            # [batch_size] edge positions drawn from this relation's own edges
             indices[
                 torch.randint(indices.numel(), (batch_size,), generator=generator, device=device)
             ]
@@ -47,16 +54,62 @@ def partition_edges(
             if indices.numel()
         ])
     else:
-        chosen = torch.randint(
+        chosen = torch.randint(  # int64 [K], with replacement
             batch.num_edges, (batch_size,), generator=generator, device=device
         )
-    positive = batch.edge_index[:, chosen]
-    types = batch.edge_type[chosen]
+    positive = batch.edge_index[:, chosen]  # int64 [2,K]
+    types = batch.edge_type[chosen]         # int64 [K]
     negative = positive.clone()
     negative[1] = torch.randint(
         batch.num_nodes, (positive.size(1),), generator=generator, device=device
     )
     return positive, types, negative
+
+
+def _resume_state(
+    cfg: dict[str, Any], num_nodes: int, num_relations: int
+) -> dict[str, Any] | None:
+    """Read ``resume_from``, which may be a local path or an ``hf://`` reference.
+
+    Returns the encoder and relation weights, the optimizer state and the epoch the
+    run had reached, or ``None`` when the config asks for a fresh run. What is
+    restored is exactly what ``pretrain`` saves: weights, optimizer moments, the
+    epoch counter and the CPU RNG state. ``epochs`` then counts *further* epochs.
+    """
+    source = cfg.get("resume_from")
+    if not source:
+        return None
+    path = resolve_checkpoint(source)
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"{path} is missing; `resume_from` takes a `pretrain` checkpoint "
+            "(best.pt / last.pt / epoch_<n>.pt), a local path or an hf:// reference"
+        )
+    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+    for key in ("encoder", "relation", "model_config"):
+        if key not in checkpoint:
+            raise KeyError(
+                f"{path} is not a `pretrain` checkpoint (no {key!r}); a head from "
+                "finetune/cv cannot be resumed as pre-training"
+            )
+    config = checkpoint["model_config"]
+    if int(config["num_nodes"]) != num_nodes or int(config["num_relations"]) != num_relations:
+        raise ValueError(
+            f"{path} was pre-trained on a graph with {config['num_nodes']} nodes and "
+            f"{config['num_relations']} relations, but this dataset has {num_nodes} and "
+            f"{num_relations}"
+        )
+    return {
+        "source": str(source),
+        "encoder": checkpoint["encoder"],
+        "relation": checkpoint["relation"],
+        "model_config": dict(config),
+        "optimizer": checkpoint.get("optimizer"),
+        "rng": checkpoint.get("rng"),
+        "generator": checkpoint.get("generator"),
+        "generator_device": checkpoint.get("generator_device"),
+        "epoch": int(checkpoint.get("epoch", 0)),
+    }
 
 
 def _open_partitions(
@@ -109,6 +162,11 @@ def run_pretraining(cfg: dict[str, Any]) -> None:
             edge_index, edge_type = dataset.graph()
             edge_index, edge_type = edge_index.to(context.device), edge_type.to(context.device)
         model_cfg = cfg.get("model", {})
+        resume = _resume_state(cfg, num_nodes, num_relations)
+        if resume is not None:
+            # The published shape wins: a resumed run must not be quietly reshaped
+            # by whatever `model:` block happens to be in the local config.
+            model_cfg = {**model_cfg, **resume["model_config"]}
         dropout = float(model_cfg.get("dropout", 0.1))
         model = GraphPretrainer(
             RelationalGIN(
@@ -119,6 +177,9 @@ def run_pretraining(cfg: dict[str, Any]) -> None:
                 dropout=dropout,
             )
         ).to(context.device)
+        if resume is not None:
+            model.encoder.load_state_dict(resume["encoder"])
+            model.relation.load_state_dict(resume["relation"])
         wrapped: torch.nn.Module = model
         if context.distributed:
             wrapped = DistributedDataParallel(
@@ -130,6 +191,13 @@ def run_pretraining(cfg: dict[str, Any]) -> None:
             lr=float(cfg["training"].get("learning_rate", 1e-3)),
             weight_decay=float(cfg["training"].get("weight_decay", 1e-4)),
         )
+        first_epoch = 1
+        if resume is not None:
+            if resume["optimizer"] is not None:
+                optimizer.load_state_dict(resume["optimizer"])
+            first_epoch = int(resume["epoch"]) + 1
+            if resume["rng"] is not None:
+                torch.set_rng_state(resume["rng"])
         epochs = int(cfg["training"].get("epochs", 100))
         steps = int(cfg["training"].get("steps_per_epoch", 100))
         batch_size = int(cfg["training"].get("batch_size", 4096))
@@ -140,7 +208,24 @@ def run_pretraining(cfg: dict[str, Any]) -> None:
                 json.dump(cfg, handle, indent=2)
         if context.distributed:
             dist.barrier()
-        generator = torch.Generator(device=context.device).manual_seed(seed)
+        generator = torch.Generator(device=context.device).manual_seed(seed + first_epoch - 1)
+        resumed_stream = False
+        if resume is not None and resume["generator"] is not None:
+            if resume["generator_device"] == context.device.type:
+                generator.set_state(resume["generator"])
+                resumed_stream = True
+            # Otherwise the seed offset above stands in: a CPU generator state cannot
+            # be loaded into a CUDA generator, so the stream restarts instead.
+        if resume is not None and context.primary:
+            print(json.dumps({
+                "resumed_from": resume["source"],
+                "trained_epochs": int(resume["epoch"]),
+                "next_epoch": first_epoch,
+                "optimizer_state": resume["optimizer"] is not None,
+                # True when the run continues the identical edge-sampling stream, so
+                # the resumed epochs match an uninterrupted run exactly.
+                "resumed_sampling_stream": resumed_stream,
+            }))
         history = []
         checkpoint_epochs = {int(value) for value in cfg["training"].get("checkpoint_epochs", [])}
         best_loss = float("inf")
@@ -158,6 +243,11 @@ def run_pretraining(cfg: dict[str, Any]) -> None:
             negative: Tensor,
             nodes: Tensor | None = None,
         ) -> tuple[float, float]:
+            """One optimizer step; see ``GraphPretrainer.forward`` for the shapes.
+
+            Returns the step's loss and the fraction of the ``K`` sampled edges the
+            model ranked above their corrupted counterpart.
+            """
             optimizer.zero_grad(set_to_none=True)
             positive_score, negative_score = wrapped(
                 graph_edge_index, graph_edge_type, positive, types, negative, nodes
@@ -178,11 +268,17 @@ def run_pretraining(cfg: dict[str, Any]) -> None:
                 "dataset": dataset.name,
                 "epoch": epoch,
                 "optimizer": optimizer.state_dict(),
+                # So `resume_from` continues the exact sampling stream rather than
+                # restarting it: the global RNG drives dropout, the explicit
+                # generator draws the edges. Ignored by every other consumer.
+                "rng": torch.get_rng_state(),
+                "generator": generator.get_state(),
+                "generator_device": context.device.type,
             }
 
         if context.primary and 0 in checkpoint_epochs:
             torch.save(snapshot(0), output_dir / "epoch_0.pt")
-        for epoch in range(1, epochs + 1):
+        for epoch in range(first_epoch, first_epoch + epochs):
             wrapped.train()
             loss_sum = accuracy_sum = 0.0
             if loader is not None:

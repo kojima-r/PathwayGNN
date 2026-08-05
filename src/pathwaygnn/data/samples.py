@@ -1,4 +1,10 @@
-"""Sample-level batching over a prepared task, independent of the dataset."""
+"""Sample-level batching over a prepared task, independent of the dataset.
+
+This is the other half of the head's tensor contract; the shape symbols are the ones
+:mod:`pathwaygnn.models.predictor` documents: ``B`` samples per batch, ``G`` genes of
+a dense node-level feature, ``V`` stored values of a sparse one across the batch,
+``S`` sample-level features.
+"""
 
 from __future__ import annotations
 
@@ -18,9 +24,19 @@ from pathwaygnn.data.format import Task
 class NodeFeatureBatch:
     """One node-level feature of a batch.
 
-    ``dense``: ``value`` is ``[batch, genes]`` and ``gene`` the shared ``[genes]``
-    node indices. ``sparse``: ``value`` is ``[values, 1]``, ``gene`` the matching
-    ``[values]`` node indices and ``sample`` the ``[values]`` row in the batch.
+    The two kinds carry the same information in different layouts, because a dense
+    table gives every sample the same gene set while a sparse one does not:
+
+    ================  ==========================  =============================
+    field             ``kind == "dense"``          ``kind == "sparse"``
+    ================  ==========================  =============================
+    ``value``         float32 ``[B, G]``           float32 ``[V, 1]``
+    ``gene``          int64 ``[G]``, shared        int64 ``[V]``, per value
+    ``sample``        ``None``                     int64 ``[V]``, values in ``[0,B)``
+    ================  ==========================  =============================
+
+    ``gene`` holds **graph node ids**, so it indexes the encoder's embedding rows
+    directly.
     """
 
     kind: str
@@ -43,6 +59,18 @@ class NodeFeatureBatch:
 
 @dataclass
 class SampleBatch:
+    """One batch as the head consumes it.
+
+    Fields:
+        node_features: alias -> :class:`NodeFeatureBatch`. **Insertion order is the
+            head's concat order**, which is why `pred` checks the alias list.
+        label: float32 ``[B]`` — 0.0 / 1.0.
+        index: int64 ``[B]`` — the sample's row in the task, kept on the CPU so
+            predictions can be written back against it.
+        sample_feature: float32 ``[B, S]`` or ``None``.
+        group: int64 ``[B]`` or ``None`` — group code per sample.
+    """
+
     node_features: dict[str, NodeFeatureBatch]
     label: Tensor
     index: Tensor
@@ -71,19 +99,22 @@ class Collate:
         self.gene_index = gene_index
 
     def __call__(self, rows: list[dict[str, Any]]) -> SampleBatch:
+        """``B`` rows from :meth:`TaskDataset.__getitem__` -> one :class:`SampleBatch`."""
         node_features: dict[str, NodeFeatureBatch] = {}
         for name, kind in self.kinds.items():
             if kind == "dense":
+                # B x [G] -> [B,G]
                 value = torch.stack([row["node_features"][name] for row in rows])
                 node_features[name] = NodeFeatureBatch("dense", self.gene_index[name], value)
                 continue
-            genes = [row["node_features"][name][0] for row in rows]
-            values = [row["node_features"][name][1] for row in rows]
-            counts = torch.tensor([item.numel() for item in genes], dtype=torch.long)
+            genes = [row["node_features"][name][0] for row in rows]   # B x [v_i]
+            values = [row["node_features"][name][1] for row in rows]  # B x [v_i]
+            counts = torch.tensor([item.numel() for item in genes], dtype=torch.long)  # [B]
             node_features[name] = NodeFeatureBatch(
                 "sparse",
-                torch.cat(genes),
-                torch.cat(values).reshape(-1, 1),
+                torch.cat(genes),                      # [V]
+                torch.cat(values).reshape(-1, 1),      # [V,1]
+                # [V]: sample 0 repeated v_0 times, then sample 1, ...
                 torch.repeat_interleave(torch.arange(len(rows), dtype=torch.long), counts),
             )
         sample_feature = (
@@ -136,10 +167,12 @@ class TaskDataset(Dataset):
 
     @property
     def targets(self) -> np.ndarray:
+        """float32 ``[len(self)]`` — the labels of this subset, in its own order."""
         return np.asarray(self._labels[self.indices])
 
     @property
     def gene_index(self) -> dict[str, Tensor]:
+        """alias -> int64 ``[G]`` graph node ids, for the dense features only."""
         return self._gene_index
 
     def collate(self) -> Collate:
@@ -157,6 +190,9 @@ class TaskDataset(Dataset):
         return sample if rows is None else int(rows[sample])
 
     def __getitem__(self, item: int) -> dict[str, Any]:
+        """One sample: dense features as float32 ``[G]``, sparse as (int64 ``[v]``,
+        float32 ``[v]``) pairs, plus its label, row index, ``[S]`` sample features and
+        group code. :class:`Collate` assembles ``B`` of these into batch tensors."""
         index = int(self.indices[item])
         node_features: dict[str, Any] = {}
         for node_feature in self.node_features:

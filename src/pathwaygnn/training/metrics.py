@@ -13,11 +13,13 @@ METRICS = ("auc", "accuracy", "precision", "recall", "f1")
 
 
 def _vector(values: Tensor | np.ndarray | list) -> Tensor:
+    """Anything 1-D-able -> a detached CPU ``[n]`` tensor."""
     tensor = values if isinstance(values, Tensor) else torch.as_tensor(np.asarray(values))
     return tensor.detach().cpu().reshape(-1)
 
 
 def binary_auc(target: Tensor, score: Tensor) -> float:
+    """ROC-AUC from ``target`` ``[n]`` (0/1) and ``score`` ``[n]``; nan if one class."""
     target, score = target.detach().cpu().float(), score.detach().cpu().float()
     positive = int(target.sum())
     negative = target.numel() - positive
@@ -63,6 +65,7 @@ def threshold_metrics(
 
 
 def binary_metrics(target: Tensor, logits: Tensor, loss: float | None = None) -> dict[str, float]:
+    """``target`` ``[n]`` (0/1) against ``logits`` ``[n]`` — **logits, not probabilities**."""
     target = target.detach().cpu().float()
     probability = logits.detach().cpu().float().sigmoid()
     scores = threshold_metrics(target, probability)

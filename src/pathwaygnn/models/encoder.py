@@ -1,3 +1,21 @@
+"""The relational graph encoder and its edge-prediction pre-training head.
+
+Tensor shapes below use these symbols:
+
+``N``
+    graph nodes (``num_nodes``), or ``n`` for the nodes of one partition batch
+``R``
+    relation types (``num_relations``)
+``E``
+    directed edges of the graph being convolved
+``H``
+    ``hidden_dim``, the width of the node embedding and of every layer
+``L``
+    ``num_layers``
+``K``
+    scored edges in one training step (``training.batch_size``)
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -56,21 +74,42 @@ class RelationalGIN(nn.Module):
     def forward_from_embedding(
         self, x: Tensor, edge_index: Tensor, edge_type: Tensor
     ) -> Tensor:
+        """Convolve a given embedding matrix over the graph.
+
+        Args:
+            x: float32 ``[N, H]`` — one row per node of the graph being convolved.
+                Integrated Gradients passes a scaled copy, and partition mode passes
+                the gathered ``[n, H]`` rows of one batch, so this is not always the
+                embedding table itself.
+            edge_index: int64 ``[2, E]`` — row 0 source, row 1 destination, indexing
+                into ``x``'s rows (so *local* indices in partition mode).
+            edge_type: int64 ``[E]`` — values in ``[0, R)``, aligned with the columns
+                of ``edge_index``.
+
+        Returns:
+            float32 ``[N, H]`` (``[n, H]`` in partition mode) — the readout over all
+            ``L`` layers concatenated, one row per input row of ``x``.
+        """
         outputs = []
         for relation_convs, relation_projections in zip(self.convs, self.projections):
             relation_outputs = []
             for relation, (conv, projection) in enumerate(
                 zip(relation_convs, relation_projections)
             ):
-                mask = edge_type == relation
+                mask = edge_type == relation  # bool [E]
                 relation_outputs.append(
+                    # conv: [N,H] -> [N,H] over this relation's edges only
                     torch.nn.functional.elu(projection(conv(x, edge_index[:, mask])))
                 )
+            # stack: [R,N,H] -> sum over relations -> [N,H]. This is the tensor whose
+            # size drives peak memory, hence the partition mode.
             x = self.dropout(torch.stack(relation_outputs).sum(dim=0))
             outputs.append(x)
+        # cat: L x [N,H] -> [N, L*H] -> readout -> [N,H]
         return self.readout(torch.cat(outputs, dim=-1))
 
     def forward(self, edge_index: Tensor, edge_type: Tensor) -> Tensor:
+        """Convolve the learned embedding table: ``[2,E]``/``[E]`` in, ``[N,H]`` out."""
         return self.forward_from_embedding(self.embedding.weight, edge_index, edge_type)
 
 
@@ -82,8 +121,19 @@ class GraphPretrainer(nn.Module):
         nn.init.normal_(self.relation.weight, std=0.1)
 
     def score(self, node_embeddings: Tensor, edges: Tensor, edge_types: Tensor) -> Tensor:
-        src, dst = edges
+        """DistMult score per edge.
+
+        Args:
+            node_embeddings: float32 ``[N, H]`` (``[n, H]`` in partition mode).
+            edges: int64 ``[2, K]`` — indices into ``node_embeddings``'s rows.
+            edge_types: int64 ``[K]`` — values in ``[0, R)``.
+
+        Returns:
+            float32 ``[K]`` — one logit per edge.
+        """
+        src, dst = edges  # int64 [K] each
         return (
+            # [K,H] * [K,H] * [K,H] -> sum over H -> [K]
             node_embeddings[src] * self.relation(edge_types) * node_embeddings[dst]
         ).sum(dim=-1)
 
@@ -103,6 +153,20 @@ class GraphPretrainer(nn.Module):
         table are gathered, which is what bounds a step's activation memory to the
         subgraph (see :mod:`pathwaygnn.data.partition`). Every parameter still
         takes part in the step, so DDP needs no unused-parameter search.
+
+        Args:
+            graph_edge_index: int64 ``[2, E]`` — the graph to convolve.
+            graph_edge_type: int64 ``[E]``.
+            positive_edges: int64 ``[2, K]`` — the edges to score as present.
+            positive_types: int64 ``[K]`` — used for **both** score calls, since a
+                corrupted edge keeps its relation.
+            negative_edges: int64 ``[2, K]`` — ``positive_edges`` with row 1 replaced.
+            nodes: int64 ``[n]`` or ``None`` — original node ids of a partition batch.
+                Given, every index above is local to it and ``E``/``N`` become the
+                subgraph's; ``None`` means the whole graph.
+
+        Returns:
+            two float32 ``[K]`` tensors: the positive and the negative logits.
         """
         embeddings = (
             self.encoder(graph_edge_index, graph_edge_type)
@@ -134,7 +198,14 @@ def load_encoder(
     num_relations: int,
     device: torch.device | str = "cpu",
 ) -> tuple[RelationalGIN, dict[str, Any]]:
-    """Rebuild a pre-trained encoder and check it against the dataset's graph."""
+    """Rebuild a pre-trained encoder and check it against the dataset's graph.
+
+    ``checkpoint_path`` may be a local path or an ``hf://`` reference, so every
+    command that takes a ``pretrained_checkpoint`` accepts a published encoder.
+    """
+    from pathwaygnn.hub import resolve_checkpoint
+
+    checkpoint_path = resolve_checkpoint(checkpoint_path)
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     config = checkpoint["model_config"]
     if int(config["num_nodes"]) != num_nodes or int(config["num_relations"]) != num_relations:

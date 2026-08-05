@@ -21,5 +21,8 @@ dependencies:
   - pip:
       - torch-geometric>=2.6
       - mygene>=3.2
+      # `pathwaygnn hg` and resolving an `hf://` checkpoint reference. Also the
+      # `hub` extra; `dry_run: true` stages an upload without it.
+      - huggingface-hub>=0.34
       - -e .
 

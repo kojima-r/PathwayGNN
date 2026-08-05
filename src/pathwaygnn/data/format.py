@@ -78,12 +78,17 @@ class NodeFeature:
         return self.kind == "dense"
 
     def gene_index(self) -> np.ndarray:
+        """int64 ``[num_features]`` — graph node id of each column of :meth:`matrix`."""
         return np.load(self.root / "gene_index.npy")
 
     def matrix(self) -> np.ndarray:
+        """float32 ``[num_rows, num_features]``, memmapped (dense kind only)."""
         return np.load(self.root / "matrix.npy", mmap_mode="r")
 
     def csr(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Sparse kind: ``ptr`` int64 ``[num_rows + 1]``, ``gene`` int64 ``[num_values]``
+        (graph node ids) and ``value`` float32 ``[num_values]``, all memmapped. Row
+        ``r`` occupies ``gene[ptr[r]:ptr[r+1]]``."""
         return tuple(  # type: ignore[return-value]
             np.load(self.root / f"{name}.npy", mmap_mode="r")
             for name in ("ptr", "gene", "value")
@@ -116,18 +121,22 @@ class Task:
         return len(self.group_names)
 
     def labels(self) -> np.ndarray:
+        """float32 ``[num_samples]`` — 0.0 / 1.0."""
         return np.load(self.root / "labels.npy")
 
     def groups(self) -> np.ndarray | None:
+        """int64 ``[num_samples]`` group codes into :attr:`group_names`, or ``None``."""
         path = self.root / "groups.npy"
         return np.load(path, mmap_mode="r") if path.is_file() else None
 
     def sample_features(self) -> np.ndarray | None:
+        """float32 ``[num_samples, sample_feature_dim]``, memmapped, or ``None``."""
         path = self.root / "sample_features.npy"
         return np.load(path, mmap_mode="r") if path.is_file() else None
 
     def rows(self, alias: str) -> np.ndarray | None:
-        """Sample -> feature-table row; ``None`` means the identity mapping."""
+        """Sample -> feature-table row: int64 ``[num_samples]``, or ``None`` for the
+        identity mapping."""
         path = self.root / "rows" / f"{alias}.npy"
         return np.load(path, mmap_mode="r") if path.is_file() else None
 
@@ -170,6 +179,8 @@ class GraphDataset:
         )
 
     def graph(self) -> tuple[Tensor, Tensor]:
+        """``edge_index`` int64 ``[2, num_edges]`` (row 0 source, row 1 destination)
+        and ``edge_type`` int64 ``[num_edges]`` with values in ``[0, num_relations)``."""
         graph = torch.load(self.root / "graph.pt", map_location="cpu", weights_only=True)
         return graph["edge_index"], graph["edge_type"]
 

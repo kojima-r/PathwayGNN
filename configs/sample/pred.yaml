@@ -1,0 +1,43 @@
+# Score a prepared dataset with a trained checkpoint and write the prediction table.
+#
+#   pathwaygnn pred --config configs/sample/pred.yaml
+#
+# The `dataset:` block is the data being predicted on. In real use that is a
+# *separate* directory holding new samples — prepared into the same generic format,
+# over the same graph — and nothing else about this config changes:
+#
+#   dataset:
+#     name: sample                 # checked against <dir>/dataset.json
+#     dir:  data_new/prepared      # the new samples
+#     task: responder
+#
+# **There is no external corpus in this repository**, so the shipped config points
+# at `data_sample/prepared` itself: the same 60 samples the model was fine-tuned on.
+# That makes the command runnable straight after the tutorial and easy to sanity
+# check. Note what the reported metrics are and are not: 48 of these 60 rows were in
+# the model's own training or validation split, so they measure the plumbing, not the
+# model. For a real evaluation of this checkpoint use the test-split numbers in
+# outputs/sample/finetune/responder/metrics.json -- which `pred` reproduces exactly
+# when it is pointed at the same rows (tests/test_predict.py asserts that).
+defaults:
+  - dataset.yaml
+
+device: cpu
+
+dataset:
+  task: responder
+
+# Either a `finetune` best.pt or a `cv` fold's model.pt. It carries the head's
+# shape, the fine-tuned encoder, the variant flags, and the training set's
+# sample-feature statistics, which are reused rather than re-derived.
+checkpoint: outputs/sample/finetune/responder/best.pt
+# Needed because that checkpoint's variant uses the graph: the encoder is rebuilt
+# from here and then overlaid with the checkpoint's own encoder state.
+pretrained_checkpoint: outputs/sample/pretrain/best.pt
+
+batch_size: 16
+threshold: 0.5      # probability at or above which `prediction` is 1
+preview_rows: 10    # rows echoed to stdout; the full table always goes to the TSV
+
+# predictions.tsv (the table), predictions_by_group.tsv, predictions.npz, summary.json
+output_dir: outputs/sample/pred

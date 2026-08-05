@@ -45,6 +45,11 @@ def _ranking_rows(
 
 
 def _scatter(values: Tensor, index: Tensor, size: int) -> Tensor:
+    """Accumulate ``values`` (any shape, flattened) into ``index`` -> float64 ``[size]``.
+
+    ``index`` is int64 with the same element count as ``values``; used to fold
+    per-value attributions onto graph nodes, so ``size`` is usually ``num_nodes``.
+    """
     output = torch.zeros(size, dtype=torch.float64)
     output.index_add_(0, index.cpu(), values.reshape(-1).double().cpu())
     return output
@@ -57,6 +62,10 @@ def _scale(
 
     Only inputs the model actually consumes are made differentiable, so that
     ``autograd.grad`` stays strict about unused tensors.
+
+    ``alpha`` is a float32 scalar. Returns the scaled batch (same shapes as the
+    original: ``[B,G]`` / ``[V,1]`` values, ``[B,S]`` sample features) and the list of
+    leaf tensors to differentiate with respect to, in a fixed order.
     """
     inputs, node_features = [], {}
     for name, node_feature in batch.node_features.items():

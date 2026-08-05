@@ -74,6 +74,9 @@ def metis_clusters(
 ) -> Tensor:
     """Assign every node to one of ``num_parts`` clusters with METIS.
 
+    Takes int64 ``[2, E]`` and returns int64 ``[num_nodes]`` with values in
+    ``[0, num_parts)``.
+
     METIS wants a symmetric adjacency without self-loops, so the graph is
     symmetrized for the partitioning call only — the stored partitions keep the
     dataset's own (possibly directed) edges, and their relation types.
@@ -181,9 +184,15 @@ def write_partitions(
 class GraphPartitionBatch:
     """The subgraph induced by one batch of partitions, in **local** node ids.
 
-    ``nodes[i]`` is the original dataset node index of local node ``i``, which is
-    what the encoder's embedding table is indexed by; ``edge_index`` refers to
-    local ids so it can be fed straight to the convolutions.
+    With ``n`` nodes and ``e`` edges in the subgraph:
+
+    Fields:
+        nodes: int64 ``[n]`` — original dataset node index of each local node, so it
+            gathers the encoder's embedding rows (``embedding(nodes)`` -> ``[n, H]``).
+        edge_index: int64 ``[2, e]`` — **local** indices in ``[0, n)``, ready for the
+            convolutions.
+        edge_type: int64 ``[e]`` — global relation ids, unchanged by partitioning.
+        part_ids: int64 ``[parts_per_batch]`` — which partitions this batch selected.
     """
 
     nodes: Tensor

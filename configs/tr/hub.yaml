@@ -1,0 +1,34 @@
+# Publish the target-repositioning encoder to the HuggingFace Hub.
+#
+#   pathwaygnn hg --config configs/tr/hub.yaml       # dry_run: true -> stages only
+#
+# The encoder is the artifact worth sharing for this corpus: `data_tr/raw` is 21.5 GB
+# and cannot be redistributed, but the pre-trained encoder over its PathwayCommons
+# graph is 9 MB and is what every downstream config needs.
+#
+# Needs the optional extra: pip install -e '.[hub]'
+checkpoint: outputs/tr/pretrain/best.pt
+
+# **Change this to your own owner.**
+repo_id: your-account/pathwaygnn-tr-encoder
+private: true
+license: mit
+title: PathwayGNN target-repositioning encoder
+
+dry_run: true
+
+extra_files:
+  - outputs/tr/pretrain/history.json
+
+notes: >-
+  Pre-trained on edge prediction over the PathwayCommons graph built by
+  `pathwaygnn-data tr-prepare` (30,895 nodes, 13 relation types, 3,671,958 directed
+  edges). Consumers must prepare their data over that same graph build: the weights
+  are indexed by its node order, and only the node and relation *counts* are checked.
+
+# Consumers then write, in any of configs/tr/{cv,finetune_*,ig_*,pred_*}.yaml:
+#   pretrained_checkpoint: hf://your-account/pathwaygnn-tr-encoder/model.pt
+# or continue pre-training in configs/tr/pretrain.yaml:
+#   resume_from: hf://your-account/pathwaygnn-tr-encoder/model.pt
+
+output_dir: outputs/tr/hub

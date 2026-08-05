@@ -37,6 +37,9 @@ cdr-upstream = [
   "twobitreader>=3.1",
   "signatureanalyzer>=0.0.7",
 ]
+# Only `pathwaygnn hg` and resolving an `hf://` checkpoint reference need this.
+# `dry_run: true` stages an upload without it, and the test suite stubs it out.
+hub = ["huggingface-hub>=0.34"]
 dev = ["pytest>=8.3", "ruff>=0.11"]
 
 [project.scripts]

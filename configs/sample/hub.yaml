@@ -1,0 +1,41 @@
+# Publish a trained checkpoint to the HuggingFace Hub.
+#
+#   pathwaygnn hg --config configs/sample/hub.yaml            # dry run: stages, uploads nothing
+#   pathwaygnn hg --config configs/sample/hub.yaml            # ... then set dry_run: false
+#
+# Works on either kind of checkpoint this engine writes, and detects which it is:
+#   - `pretrain` best.pt      -> the pre-trained encoder (`kind: encoder`)
+#   - `finetune`/`cv` best.pt -> a trained sample-level head (`kind: head`)
+#
+# Needs the optional extra: pip install -e '.[hub]'
+
+# The checkpoint to publish. Swap for outputs/sample/pretrain/best.pt to publish the
+# encoder instead of the head.
+checkpoint: outputs/sample/finetune/responder/best.pt
+
+# Where it goes: <owner>/<name> on huggingface.co. **Change this to your own owner.**
+repo_id: your-account/pathwaygnn-sample-responder
+private: true                 # public repositories are opt-in, not the default
+license: mit
+title: PathwayGNN sample / responder head
+
+# **dry_run leaves the machine untouched**: the full payload (model.pt,
+# pathwaygnn.json, README.md model card, extra files) is written to output_dir so it
+# can be reviewed, and nothing is uploaded. Set to false to actually push.
+dry_run: true
+
+# Provenance worth shipping next to the weights. Paths are checked before anything
+# is staged.
+extra_files:
+  - outputs/sample/finetune/responder/metrics.json
+
+notes: >-
+  Trained on the committed 60-sample tutorial corpus `data_sample`, which is
+  synthetic. Useful for exercising the pipeline, not for biology.
+
+# Authentication for a real upload, in order of preference: the `hf` CLI login
+# (`hf auth login`), the HF_TOKEN environment variable, or `token:` here. **Do not
+# commit a token** -- prefer one of the first two.
+# token: hf_...
+
+output_dir: outputs/sample/hub

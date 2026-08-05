@@ -93,6 +93,7 @@ conda env update -n gnn -f environment.yml --prune
 conda activate gnn
 pip install -e .                  # pathwaygnn と pathwaygnn-data の2コマンドが入る
 pip install -e '.[benchmark]'     # 任意: scikit-learn / xgboost（cv とベースラインで使用）
+pip install -e '.[hub]'           # 任意: huggingface-hub（`pathwaygnn hg` と hf:// 参照で使用）
 ```
 
 Python 3.11+、PyTorch 2.6+、PyG 2.6+ が必要です。旧実装の PyTorch 1.x / PyG 1.x API は使いません。
@@ -140,7 +141,7 @@ dense テーブルの完全性を検証します）。
 ## 4. チュートリアル: `data_sample` で全機能を一周する
 
 ```bash
-bash scripts/sample/run_all.sh        # ①〜⑥をまとめて（CPU、約2分）
+bash scripts/sample/run_all.sh        # ①〜⑧をまとめて（CPU、約2分）
 ```
 
 以下は各段が何をしているかの解説です。1段ずつ実行しても同じです。
@@ -208,7 +209,7 @@ find data_sample/prepared -type f | sort      # 92 KB、21ファイル
 ```
 
 実装は `src/pathwaygnn_datasets/sample/prepare.py`（約240行、うち40行は解説）で、
-このリポジトリで**最小の前処理実装**です。自分のデータを足すときの雛形になります（§4.9）。
+このリポジトリで**最小の前処理実装**です。自分のデータを足すときの雛形になります（§4.10）。
 
 ### 4.2 ② グラフ事前学習（エッジ予測）
 
@@ -351,7 +352,47 @@ pathwaygnn ig --config configs/sample/ig.yaml                           # 10 秒
 `degree_ig_pearson_r`（ここでは 0.53）は「帰属が単にノード次数を反映していないか」の
 健全性チェックです。
 
-### 4.8 結果を表にする / 片付ける
+### 4.8 ⑧ 学習済みモデルで予測表を出す
+
+```bash
+pathwaygnn pred --config configs/sample/pred.yaml      # 数秒
+```
+
+```text
+sample_index  probability  prediction  label  group     row_expression  row_tissue_signature
+------------  -----------  ----------  -----  --------  --------------  --------------------
+0             0.547536     1           1      TISSUE_A  0               0
+1             0.332248     0           0      TISSUE_B  1               1
+2             0.537786     1           0      TISSUE_C  2               2
+3             0.755366     1           0      TISSUE_A  3               0
+4             0.465206     0           1      TISSUE_B  4               1
+... 55 more rows
+```
+
+`outputs/sample/pred/` に4つ出ます。**`predictions.tsv` が予測結果の表**（上の全60行）、
+`predictions_by_group.tsv` がグループ別集計、`predictions.npz` が同じ内容の配列、
+`summary.json` が件数・閾値・確率の分布・指標・**チェックポイントの学習元**です。
+
+```text
+group     samples  predicted_positive  predicted_positive_ratio  label_positive  accuracy
+TISSUE_A  20       13                  0.6500                    10              0.6500
+TISSUE_B  20       2                   0.1000                    9               0.6500
+TISSUE_C  20       10                  0.5000                    11              0.5500
+```
+
+`row_<alias>` 列があるので、各予測がどの発現行・どの組織シグネチャ行から出たかを追えます。
+
+**本来の使い方は「別に用意したデータ」を指すことです。** 新しいサンプルを同じグラフの上で
+汎用形式に前処理し、`dataset.dir` をそのディレクトリに向ければ、設定の他の部分は変わりません。
+このリポジトリには外部データがないので、**同梱の設定は `data_sample/prepared` 自身を指しています**。
+そのため上の指標は**モデルの評価ではなく配線の確認**です（60行のうち48行が §4.5 の学習・検証に
+使われた行）。このチェックポイントの実際の評価値は §4.5 の test 側で、
+**同じ行に `pred` を当てるとその値を完全に再現します**（テストで固定しています）。
+
+`checkpoint:` には §4.5 の `finetune` の `best.pt` でも §4.3 の `cv` の fold の `model.pt` でも
+渡せます。キーの一覧は [README_config.md](README_config.md) §8 にあります。
+
+### 4.9 結果を表にする / 片付ける
 
 ```bash
 python scripts/sample/summarize.py         # 上記の表をまとめて表示（再学習しない）
@@ -361,7 +402,7 @@ rm -rf data_sample/prepared outputs/sample # 生成物を全消去（raw は残�
 実データでは、この `summarize.py` の役割を専用のレポートコマンド
 （`pathwaygnn-data tr-report` など）が担い、Markdown と HTML と図まで生成します（§7.1）。
 
-### 4.9 自分のデータを足す
+### 4.10 自分のデータを足す
 
 `src/pathwaygnn_datasets/sample/prepare.py` をコピーして4手順を書き換えるだけです。
 
@@ -528,6 +569,45 @@ PathwayCommons 由来のグラフはハブが多く密で、`data_tr` を256分�
 
 ---
 
+## 6.2 HuggingFace Hub への公開と再開
+
+事前学習後・finetune後のチェックポイントを公開し、公開されたモデルから再開できます。
+
+```bash
+# 公開する（既定は dry_run: true = マシンの外に何も出さず内容を組み立てるだけ）
+pathwaygnn hg --config configs/tr/hub.yaml
+```
+
+`checkpoint:` の種別は自動判別されます。`pretrain` の出力なら **encoder**、
+`finetune` / `cv` の出力なら **head** として、`model.pt`（バイト一致のコピー）、
+`pathwaygnn.json`（機械可読なマニフェスト）、`README.md`（モデルカード）を組み立てます。
+モデルカードの Usage 節には**そのまま貼れる設定行**が入ります。
+
+**受け取る側に新しいコマンドは要りません。** チェックポイントを指すキーはすべて
+`hf://` 参照を受け付けます。
+
+```yaml
+# configs/tr/cv.yaml など（`pretrained_checkpoint` を持つ全コマンド）
+pretrained_checkpoint: hf://your-account/pathwaygnn-tr-encoder/model.pt@v1
+
+# configs/tr/pred_oe_act.yaml（head を公開した場合）
+checkpoint: hf://your-account/pathwaygnn-tr-oe-act/model.pt
+
+# configs/tr/pretrain.yaml — 事前学習を続ける
+resume_from: hf://your-account/pathwaygnn-tr-encoder/model.pt
+```
+
+`resume_from` は**本当の再開**です。重み・optimizer のモーメント・エポック番号に加えて
+**エッジサンプラの乱数ストリームまで復元**するので、**中断せずに回した場合とビット一致します**
+（`training.epochs` は「ここから追加で回すエポック数」）。公開モデルの形状が
+手元の `model:` ブロックより優先されるため、静かに作り替えられることもありません。
+
+既定は `private: true`、`dry_run: true` です（公開は明示的な選択）。認証は
+`hf auth login` か `HF_TOKEN` を推奨します（設定ファイルにトークンを書かないでください）。
+キーの一覧は [README_config.md](README_config.md) §9 にあります。
+
+---
+
 ## 7. 応用: 3つの実データセット
 
 チュートリアルと**同じコマンド・同じ汎用形式**です。違うのは、①生データが巨大・雑多なので
@@ -661,12 +741,21 @@ seed + task.seed_offset * 1000 + fold + variant.seed_index * 100
 ## 9. テスト
 
 ```bash
-conda run -n gnn python -m pytest          # 69件、数秒、CPU のみ
+conda run -n gnn python -m pytest          # 116件、数秒、CPU のみ
 ```
 
 小さな raw データと合成データセットを `tmp_path` に作り、前処理、汎用形式の読み書き、
 関係別 GIN、エッジ事前学習、dense/sparse node-level feature の等価性、可変長サンプル集約、
 逆伝播、層化分割、`cv` グリッドと fold 再開、`ig` の出力を検証します。
+`tests/test_tensor_shapes.py` は、モデル周辺の関数が受け渡すテンソルの**次元と dtype が
+docstring/コメントの記述どおりであること**を検証します（記述が陳腐化しないようにするため）。
+`tests/test_predict.py` は `pred` の表の列と行数、閾値の効き方、**`finetune` が報告した
+test 指標を同じ行に対して完全再現すること**、別データセット（同じグラフ）を採点できること、
+ラベルが1クラスなら指標を出さないことを検証します。
+`tests/test_hub.py` は `hf://` 参照の解析、staging された payload の自己記述性、
+**dry run が何も送信しないこと**、`resume_from` が中断なしの学習とビット一致すること、
+公開モデルの形状が手元の設定より優先されることを検証します
+（`huggingface_hub` は入れず、`sys.modules` のスタブで代替します）。
 `tests/test_partition.py` は METIS 分割が全ノード・全エッジをちょうど1回覆うこと、
 パーティションのバッチが**その集合の誘導部分グラフと厳密に一致する**こと（分割をまたぐ
 エッジを落とさないこと）、rank への割り当てが互いに素かつ同ステップ数になること
@@ -686,9 +775,10 @@ src/pathwaygnn/            学習エンジン（データセット非依存）
   data/format.py             汎用データ形式の定義と DatasetWriter
   data/samples.py            タスク → バッチ（dense/sparse の可変長集約）
   data/partition.py          METIS グラフ分割と、その上の Cluster-GCN ローダ
+  hub.py                     HuggingFace Hub への公開と hf:// 参照の解決
   models/encoder.py          RelationalGIN、GraphPretrainer、load_encoder
   models/predictor.py        SampleLevelModel（両データセット共通のヘッド）
-  training/                  pretrain / cv / finetune / benchmark / ig / metrics / distributed
+  training/                  pretrain / cv / finetune / benchmark / ig / pred / metrics / distributed
                              dist_benchmark（分割数 × バッチ幅の時間・メモリ計測）
 src/pathwaygnn_datasets/   コーパスごとの前処理とレポート
   sample/prepare.py          ★最小の実装例（約240行）
