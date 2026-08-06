@@ -1,70 +1,61 @@
 # PathwayGNN
 
-パスウェイグラフ（遺伝子どうしの関係グラフ）を事前学習し、その埋め込みを使って
-**サンプル単位の二値予測**を行う実装です。次の4研究実装を、現行の
-PyTorch / PyTorch Geometric API で1つのエンジンに統合しています。
-
-- `SLGCN-TR`: PathwayCommons と摂動・疾患発現シグネチャ、KD–inhibitory / OE–activatory 分類
-- `SampleLevelGNN`: エッジ予測によるグラフ事前学習とサンプルレベル集約
-- `DistributedGNN`: `torchrun`、`torch.distributed`、DDP による分散事前学習と、
-  大規模グラフ向けの METIS グラフ分割を用いた分散実行（Cluster-GCN、§6.1）
-- `GraphCDRScan`: Reactome機能相互作用グラフと GDSC/CCLP による細胞株×化合物の薬剤感受性予測
-
-旧コードは依存関係として取り込まず、入出力と実験機能を参照して `src/pathwaygnn` に
-スクラッチ実装しています。
+パスウェイグラフを事前学習し、その埋め込みを使って
+サンプル単位の予測を行う実装です。
 
 > **まず動かす人へ:** 実データは容量とライセンスの都合で Git に入っていません。
-> クローン直後に動くのは **`data_sample/`（60サンプル・20遺伝子の合成データ、12 KB、コミット済み）**
-> です。**§4 チュートリアル** を順に実行すると、
-> 前処理から帰属解析まで **CPUで約2分**で一周できます。実データはその応用として
-> **§7 応用** で説明します。
+> クローン直後に動くのは **`data_sample/`**（60サンプル・20遺伝子の合成データ）です。
+> **§4 チュートリアル** を順に実行すると、
+> 前処理から帰属解析まで **CPUで約2分**で一周できます。実データはその応用として **§7 応用** で説明します。
 
 ## ドキュメント一覧
 
 | 文書 | 内容 |
 | --- | --- |
-| **この README** | 全体像、チュートリアル、各データセットの使い方 |
-| [data_sample/README.md](data_sample/README.md) | **チュートリアル用データの詳細**（生成規則、列レイアウト、汎用形式との対応） |
-| [README_config.md](README_config.md) | `configs/` の YAML 全項目のリファレンス（既定値・読むコマンド・落とし穴） |
-| [README_data_tr.md](README_data_tr.md) / [data_tr/README.md](data_tr/README.md) | `data_tr`（target repositioning）の元データと前処理 |
-| [README_data_cancer.md](README_data_cancer.md) / [data_cancer/README.md](data_cancer/README.md) | `data_cancer`（TCGA がん予後）の元データと前処理 |
-| [README_data_cdr.md](README_data_cdr.md) / [data_cdr/README.md](data_cdr/README.md) | `data_cdr`（GDSC 薬剤感受性）の元データと前処理 |
-| [docs/tr_report.md](docs/tr_report.md) / [docs/cancer_reproduction.md](docs/cancer_reproduction.md) / [docs/cdr_report.md](docs/cdr_report.md) | 各データセットの実行・評価結果（生成物） |
-| [docs/dist_report.md](docs/dist_report.md) | **グラフ分割の分割数 × バッチ幅と、計算時間・メモリの関係**（生成物、§6.1） |
+| [このREADME](README.md)  | 全体像、チュートリアル、各データセットの使い方 |
+| [README: config](README_config.md) | `configs/` の YAML 全項目のリファレンス（既定値・設定値の解説） |
+| [README: data_sample](data_sample/README.md) | チュートリアル用データの詳細（生成規則、列レイアウト、汎用形式との対応） |
+| [README: data_tr](README_data_tr.md) / [data_tr/README.md](data_tr/README.md) | target repositioning 応用例のための元データと前処理 |
+| [README: data_cancer](README_data_cancer.md) / [data_cancer/README.md](data_cancer/README.md) | TCGA を使ったがん予後予測の応用例のための元データと前処理 |
+| [README: data_cdr](README_data_cdr.md) / [data_cdr/README.md](data_cdr/README.md) | GDSC を使った薬剤感受性予測応用例のための元データと前処理 |
+| [Report: tr](docs/tr_report.md)  | target repositioning 応用例の評価結果 |
+| [Report: cancer](docs/cancer_reproduction.md)| TCGA を使ったがん予後予測の応用例の評価結果 |
+| [Report: cdr](docs/cdr_report.md)  | GDSC を使った薬剤感受性予測応用例の評価結果 |
+| [Report: dist](docs/dist_report.md) | グラフ分割の分散実行の評価結果 |
 
 ---
 
 ## 1. 全体像
 
-### 1.1 前処理と学習エンジンの分離
+### 1.1 前処理と学習エンジン
 
-データセット固有の処理は学習エンジンから完全に分離されています。**依存の向きは一方向**で、
-`pathwaygnn_datasets` は `pathwaygnn.data.format` を import しますが、
-**エンジンは `pathwaygnn_datasets` を一切 import しません**。
+データセット固有の前処理部分と学習エンジンは分離されています。
 
-| パッケージ | 知っていること | CLI |
+| パッケージ | 役割 | CLIコマンド |
 | --- | --- | --- |
 | `pathwaygnn_datasets` | 1つのコーパスの事情（ファイル名、列レイアウト、ID規約、論文の参照値）とレポート | `pathwaygnn-data` |
 | `pathwaygnn` | **汎用データ形式だけ**。データセット名すら本質的に知らない | `pathwaygnn` |
+`pathwaygnn_datasets` は `pathwaygnn.data.format` を import しますが、エンジンは `pathwaygnn_datasets` を import しません。
 
 ```text
 生データ ──前処理──▶ prepared/（汎用形式） ──▶ pretrain ─▶ cv / finetune / benchmark / ig ─▶ report
          pathwaygnn-data                        └────────── pathwaygnn ──────────┘   pathwaygnn-data
 ```
 
-前処理は**最後まで終わらせてから**学習に入ります。学習コマンドは `prepared/` しか読みません。
+前処理は最後まで終わらせてから学習に入ります。学習コマンドは `prepared/` しか読みません。
 
 ### 1.2 4つのデータセット
 
-| データセット | 内容 | ノード / 関係 | タスク | サイズ | Git |
+| データセット | 内容 | ノード数 / 関係数 | タスク | サイズ | Git |
 | --- | --- | --- | --- | --- | --- |
-| **`sample`** | **チュートリアル用の合成データ** | 20 / 3 | `responder`（60）、`relapse`（48） | 12 KB | **コミット済み** |
-| `tr` | 摂動シグネチャ × 疾患シグネチャで創薬標的を分類 | 30,895 / 13 | `kd_inh`（61,101）、`oe_act`（3,465） | raw 21.5 GB | 管理外 |
-| `cancer` | TCGA 発現プロファイルから n 年生存を予測 | 30,918 / 13 | `1year`…`5year`（4,492〜9,484） | raw 2.6 GB | 管理外 |
-| `cdr` | GDSC の *(細胞株, 化合物)* の薬剤感受性 | 13,606 / 356 | `sensitive_drugwise`、`sensitive_global`（各107,418） | raw 1.6 GB | 管理外 |
+| `sample` | チュートリアル用の合成データ | 20 / 3 | `responder`（60）、`relapse`（48） | 12 KB | 本リポジトリ内 |
+| `tr` | 摂動シグネチャ × 疾患シグネチャで創薬標的を分類 | 30,895 / 13 | `kd_inh`（61,101）、`oe_act`（3,465） | raw 21.5 GB | 外部 |
+| `cancer` | TCGA 発現プロファイルから n 年生存を予測 | 30,918 / 13 | `1year`…`5year`（4,492〜9,484） | raw 2.6 GB | 外部 |
+| `cdr` | GDSC の (細胞株, 化合物) の薬剤感受性 | 13,606 / 356 | `sensitive_drugwise`、`sensitive_global`（各107,418） | raw 1.6 GB | 外部 |
 
-切り替えは設定ファイルの `dataset:` ブロック**だけ**で決まります。ブロックは各データセットの
-`dataset.yaml` に一本化され、実験設定は `defaults:` で取り込みます。
+各データセットの設定は `dataset.yaml`内の `dataset:` ブロックに一本化され、各実験設定（例えば下は`configs/sample/cv.yaml`の例）の `defaults:` で取り込みます。
+`name` はデータセット内の `prepared/dataset.json` と照合され、`dir` を取り違えた設定はデータを読んだ時点でエラーを出します。
+出力も `outputs/sample/…`、`outputs/tr/…` のように分かれます。
 
 ```yaml
 # configs/sample/dataset.yaml
@@ -81,9 +72,6 @@ dataset:
   tasks: [responder, relapse]
 ```
 
-`name` は `dataset.json` と照合されるので、`dir` を取り違えた設定は**データを読んだ時点で失敗**します
-（学習が進んでから気づくことがない）。出力も `outputs/sample/…`、`outputs/tr/…` のように分かれます。
-
 ---
 
 ## 2. セットアップ
@@ -96,19 +84,19 @@ pip install -e '.[benchmark]'     # 任意: scikit-learn / xgboost（cv とベ�
 pip install -e '.[hub]'           # 任意: huggingface-hub（`pathwaygnn hg` と hf:// 参照で使用）
 ```
 
-Python 3.11+、PyTorch 2.6+、PyG 2.6+ が必要です。旧実装の PyTorch 1.x / PyG 1.x API は使いません。
+Python 3.11+、PyTorch 2.6+、PyG 2.6+ が必要です。
 CPU のみの場合は `environment.yml` の `pytorch-cuda` を外し、環境に合う公式 PyTorch を入れてください。
-**チュートリアルは GPU 不要**です（`configs/sample/*.yaml` は `device: cpu`）。
+チュートリアルは GPU 不要での動作になっています（`configs/sample/*.yaml` は `device: cpu`）。
 
-`pathwaygnn` / `pathwaygnn-data` は `python -m pathwaygnn.cli` / `python -m pathwaygnn_datasets.cli`
+`pathwaygnn` / `pathwaygnn-data` コマンドは `python -m pathwaygnn.cli` / `python -m pathwaygnn_datasets.cli`
 と等価です（`torchrun` から使うときは後者）。
 
 ---
 
 ## 3. 汎用データ形式
 
-前処理の到達点はこの1形式だけです（定義は `src/pathwaygnn/data/format.py`、
-実例は [data_sample/README.md](data_sample/README.md) の §4）。
+前処理後のデータは以下の形式です（定義は `src/pathwaygnn/data/format.py`、実例は [data_sample/README.md](data_sample/README.md) の §4を参照）。
+（自前で用意する場合も以下ファイルを用意することで動作します）
 
 ```text
 <root>/dataset.json                 マニフェスト。name がデータセットを識別する
@@ -120,21 +108,18 @@ CPU のみの場合は `environment.yml` の `pytorch-cuda` を外し、環境�
 <root>/tasks/<task>/                labels.npy, groups.npy?, sample_features.npy?, rows/<alias>.npy?
 ```
 
-一般化を支えているのは次の4概念です。
+複雑なデータセットの準備では以下の4つに気を付ける必要があります。
 
-- **node-level feature** — サンプルの「遺伝子ごとの値」表現（発現プロファイル、摂動シグネチャ、
-  変異数など）。**データセット単位の表**なので複数タスクで共有できます。
-- **task** — 1つの二値予測問題。`task.json` の `node_features` が
-  **局所名（alias）→ データセットの表**を対応づけます。同じ alias を使うタスク同士は
-  モデル設定をそのまま流用できます（`1year`…`5year` が1つの設定で回る理由）。
-- **rows/`<alias>`.npy** — サンプル → 表の行。**ファイルが無ければ恒等写像**。
-  多数のサンプルが少数の行を共有する場合（`cdr` の107,418サンプル→760行）に使います。
-- **groups** / **sample-level feature** — サンプル単位のグループ（がん種、組織、対象疾患）と、
+- **node-level feature**: サンプルの「遺伝子ごとの値」表現（発現プロファイル、摂動シグネチャ、変異数など）。データセット単位の表なので複数タスクで共有できます。
+- **task**: 1つの(二値)予測問題。`task.json` の `node_features` が局所名（alias）→ データセットの表を対応づけます。同じ alias を使うタスク同士は
+  モデル設定をそのまま流用できます（例：`cancer` の`1year`…`5year` が1つの設定で回る理由）。
+- **rows/`<alias>`.npy**: サンプル → 表の行。ファイルが無ければ恒等写像。
+  多数のサンプルが少数の行を共有する場合（例：`cdr` の107,418サンプル→760行）に使います。
+- **groups** / **sample-level feature**: サンプル単位のグループ（がん種、生体組織、対象疾患）と、
   遺伝子に紐づかない密ベクトル（年齢、変異スペクトル、化合物フィンガープリント）。
-  前者はグループ別AUC・グループ別帰属を、後者はモデルの sample-level 分岐を駆動します。
+  前者はグループ別AUC・グループ別帰属を、後者はモデルの sample-level の特徴に使用します。
 
-書き込みは `DatasetWriter` 経由のみです（`finish()` がノード範囲・行範囲・形状・
-dense テーブルの完全性を検証します）。
+書き込みは `DatasetWriter` 経由のみです（`finish()` がノード範囲・行範囲・形状・dense テーブルの完全性を検証します）。
 
 ---
 
@@ -147,16 +132,16 @@ bash scripts/sample/run_all.sh        # ①〜⑧をまとめて（CPU、約2分
 以下は各段が何をしているかの解説です。1段ずつ実行しても同じです。
 数値はすべて実測値（1コアCPU）で、乱数の都合で ±0.02 程度ぶれます。
 
-### 4.0 教材データ: 60サンプル・20遺伝子・27エッジ
+### 4.0 教材合成データ: 60サンプル・20遺伝子・27エッジ
 
-`data_sample/raw/` に人が読める TSV が4つあります（**完全な合成データ**で、実測値ではありません）。
+`data_sample/raw/` に TSV が4つあります。
 
 | ファイル | 内容 | 汎用形式では |
 | --- | --- | --- |
 | `graph.tsv` | 27行の3列 SIF（起点 / 関係 / 終点） | グラフ（20ノード、3関係） |
 | `expression.tsv` | 60サンプル × 20遺伝子の発現量（横長） | **dense** node-level feature `expression` |
-| `tissue_signature.tsv` | 組織3種 × マーカー8遺伝子（縦長） | **sparse** node-level feature `tissue_signature` |
-| `samples.tsv` | 組織・年齢・性別・病期・喫煙・ラベル2列 | groups、sample-level features、task 2つ |
+| `tissue_signature.tsv` | 生体組織3種 × マーカー8遺伝子（縦長） | **sparse** node-level feature `tissue_signature` |
+| `samples.tsv` | 生体組織3種・年齢・性別・病期・喫煙・ラベル2列 | groups、sample-level features、task 2つ |
 
 遺伝子名が役割を表しています。
 
@@ -164,9 +149,9 @@ bash scripts/sample/run_all.sh        # ①〜⑧をまとめて（CPU、約2分
 | --- | --- |
 | `GROWTH1`…`GROWTH7` | `responder` を**正**に決める |
 | `IMMUNE1`…`IMMUNE7` | `responder` を**負**、`relapse` を**正**に決める |
-| `NOISE1`…`NOISE6` | **どのラベルにも効かない**（帰属解析が拾ってはいけない遺伝子） |
+| `NOISE1`…`NOISE6` | どのラベルにも効かない（帰属解析が拾ってはいけない遺伝子） |
 
-ラベルは「モジュール活性」の関数として作られています（**正解が分かっている**）。
+ラベルは各モジュールの関数として以下の関数で作られています（人工的なラベル）。
 
 ```text
 responder = 1  if  2.0*growth - 2.0*immune + 0.8*z(stage) + N(0,0.3²) > 中央値   （60サンプル、陽性30）
@@ -199,7 +184,7 @@ pathwaygnn-data sample-prepare --config configs/sample/prepare.yaml     # 5 秒
 1. **エッジが27→54**: 無向エッジを両方向に展開しています。ノード名・関係名は
    `sorted()` してから番号を振るので、同じ入力なら常に同じインデックスになります
    （事前学習の再現性がこれに依存します）。
-2. **`tissue_signature` は3行しかない**: サンプル単位ではなく**組織単位**の表で、
+2. **`tissue_signature` は3行しかない**: サンプル単位ではなく生体組織（今回は3種）単位の表で、
    60サンプルが `rows/tissue_signature.npy` を通して3行を共有します。
 3. **`responder` には `rows/expression.npy` が無い**: 全60サンプルが発現表の60行と
    1対1（恒等写像）なので、ファイルを書きません。`relapse` は48サンプルなので持ちます。
@@ -208,8 +193,7 @@ pathwaygnn-data sample-prepare --config configs/sample/prepare.yaml     # 5 秒
 find data_sample/prepared -type f | sort      # 92 KB、21ファイル
 ```
 
-実装は `src/pathwaygnn_datasets/sample/prepare.py`（約240行、うち40行は解説）で、
-このリポジトリで**最小の前処理実装**です。自分のデータを足すときの雛形になります（§4.10）。
+実装は `src/pathwaygnn_datasets/sample/prepare.py`（約240行、うち40行は解説）で、最小の前処理実装です。自分のデータを足すときの雛形になります（§4.10）。
 
 ### 4.2 ② グラフ事前学習（エッジ予測）
 
@@ -217,16 +201,15 @@ find data_sample/prepared -type f | sort      # 92 KB、21ファイル
 pathwaygnn pretrain --config configs/sample/pretrain.yaml               # 10 秒
 ```
 
-各関係ごとの GINConv でノード埋め込みを作り、DistMult スコアで
-「実在エッジ vs 終点を差し替えた偽エッジ」を識別します。ラベルは一切使いません。
+各関係ごとの GINConv でノード埋め込みを作り、DistMult スコアで「実在エッジ vs 終点を差し替えた偽エッジ」を識別します。
+ラベルは使いません。
 
 ```text
 best epoch 45, loss 0.5887, edge-ranking accuracy 0.941
 ```
 
 `outputs/sample/pretrain/` に `best.pt` / `last.pt` / `history.json` が出ます。
-`best.pt` のチェックポイントには `model_config`（ノード数・関係数・次元・層数・dropout）が
-埋め込まれ、**ノード数や関係数が違うデータセットに読み込もうとすると拒否**されます。
+`best.pt` のチェックポイントには `model_config`（ノード数・関係数・次元・層数・dropout）が埋め込まれ、ノード数や関係数が違うデータセットに読み込もうとすると拒否されます。
 
 ### 4.3 ③ 層化k分割交差検証とアブレーション
 
@@ -248,26 +231,24 @@ pathwaygnn cv --config configs/sample/cv.yaml                          # 53 秒
 | `relapse` | `gnn_mlp_cov` | ✓ | ✓ | **0.896 ± 0.037** | 0.750 | 0.770 |
 
 **なぜ `mlp` が偶然（0.5）並みなのか**が、このアーキテクチャを理解する鍵です。
-サンプルレベルヘッドは、遺伝子の値をスカラー1つずつ射影してから**遺伝子軸で総和**します。
-`use_graph: false` ではノード埋め込みが足されないため、**どの値がどの遺伝子のものか
-区別できません**（値の集合しか見ていない）。`GROWTH` の平均と `IMMUNE` の平均の差という
-ラベル規則は、原理的に表現できません。**ノード埋め込みが遺伝子IDの役割を担っている**
-のであって、グラフ構造の恩恵だけを測っているわけではない、ということです。
-遺伝子ごとに重みを持つ**真のグラフなしベースライン**が見たいときは §4.6 の `benchmark`
-（Logistic Regression など）を使います。
+サンプルレベルヘッドは、遺伝子の値をスカラー1つずつ射影してから遺伝子軸で総和します。
+`use_graph: false` ではノード埋め込みが足されないため、どの値がどの遺伝子のものか
+区別できません（値の集合しか見ていない）。`GROWTH` の平均と `IMMUNE` の平均の差という
+ラベル規則は、原理的に表現できません。
+ノード埋め込みが遺伝子IDの役割も担っているのであって、グラフ構造の恩恵だけを測っているわけではない、ということです。
+遺伝子ごとに重みを持つグラフなしベースラインが見たいときは §4.6 の `benchmark`（Logistic Regression など）を使います。
 
-出力は `outputs/sample/cv/<task>/<variant>/fold_<k>/{metrics.json,predictions.npz,model.pt}` と
-条件ごとの `summary.json` です。評価値は **ROC-AUC と、閾値0.5での accuracy / precision /
-recall / F1** をエポック単位（`history` の `test_*`）、fold単位（`metrics.json`）、
-条件単位（`summary.json` の `mean_*` / `std_*` / `fold_*`）で保存します。モデル選択は
-ROC-AUC のみで行います。
+出力は `outputs/sample/cv/<task>/<variant>/fold_<k>/{metrics.json,predictions.npz,model.pt}` と条件ごとの `summary.json` です。
+評価値は ROC-AUC と accuracy / precision / recall / F1 （閾値0.5）をエポック単位（`history` の `test_*`）、fold単位（`metrics.json`）、
+条件単位（`summary.json` の `mean_*` / `std_*` / `fold_*`）で保存します。
+モデル選択は ROC-AUC のみで行います。
 
 **fold 単位で再開できます**。`metrics.json` / `predictions.npz` / `model.pt` が揃っていれば
 その fold は再利用され、`fold_<k>/` を消すとそこだけ再計算されます。
 
 ### 4.4 ④ グループ別AUC
 
-`groups`（ここでは組織）を持つタスクでは、fold ごとにグループ別 AUC も記録されます。
+`groups`（ここでは生体組織を想定）を持つタスクでは、fold ごとにグループ別 AUC も記録されます。
 追加のコマンドは不要で、`metrics.json` の `per_group_auc` に入っています。
 
 ```text
@@ -277,8 +258,7 @@ fold     TISSUE_A   TISSUE_B   TISSUE_C        （responder / gnn_mlp_cov）
 2           1.000      1.000      1.000
 ```
 
-実データではこれが**がん種別AUC**（`cancer`）、**原発部位別AUC**（`cdr`）、
-**疾患別AUC**（`tr`）になります。
+実データではこれが**がん種別AUC**（`cancer`）、**原発部位別AUC**（`cdr`）、**疾患別AUC**（`tr`）になります。
 
 ### 4.5 ⑤ 単一分割（train / validation / test）
 
@@ -286,17 +266,16 @@ fold     TISSUE_A   TISSUE_B   TISSUE_C        （responder / gnn_mlp_cov）
 pathwaygnn finetune --config configs/sample/finetune.yaml               # 9 秒
 ```
 
-層化して 36 / 12 / 12 に分け、validation AUC で早期終了し、**test は最後に1回だけ**評価します
-（`cv` が held-out fold を毎エポック見るのとは別のプロトコル）。学習データのクラス比から
-`pos_weight` を設定します。
+層化して 36 / 12 / 12 に分け、validation AUC で早期終了し、test は最後に1回だけ評価します
+（`cv` が held-out fold を毎エポック見るのとは別のプロトコル）。
+クラス比`pos_weight` も学習データから設定されます。
 
 ```text
 finetune (test split)  AUC 0.806  accuracy 0.750  F1 0.769   (38 epochs)
 ```
 
-`outputs/sample/finetune/responder/metrics.json` に全履歴・test 指標・
-**再現可能な分割 index** が入ります。test が12サンプルしかないので、`cv`（0.987）より
-値がぶれます。小さなデータで単一分割を信用しない、という教訓もここで見えます。
+`outputs/sample/finetune/responder/metrics.json` に全履歴・test 指標・再現可能な分割 index が入ります。
+test が12サンプルしかないので、`cv`（0.987）より値がぶれます。
 
 ### 4.6 ⑥ グラフなしベースライン
 
@@ -305,15 +284,13 @@ pathwaygnn benchmark --config configs/sample/benchmark.yaml             # 9 秒
 ```
 
 全 node-level feature を `[samples, num_nodes]` に展開して sample-level 特徴と連結し、
-**同じ特徴量**で Logistic Regression / Random Forest / XGBoost を同じ層化k分割で回します。
+同じ特徴量で Logistic Regression / Random Forest / XGBoost を同じ層化k分割で回します。
 
 ```text
 logistic_regression    AUC 0.990   random_forest AUC 0.957   xgboost AUC 0.977
 ```
 
 この教材データのラベルは遺伝子の線形和なので、線形モデルがほぼ上限（GNN の 0.987 と同等）です。
-**「グラフが要る／要らない」を判定するにはこの比較が必要**で、`cv` の `mlp` variant だけを
-根拠にはできません（§4.3）。
 
 ### 4.7 ⑦ Integrated Gradients で答え合わせ
 
@@ -341,16 +318,14 @@ pathwaygnn ig --config configs/sample/ig.yaml                           # 10 秒
 
 生成規則と照合すると:
 
-- 上位10位が**すべて因果遺伝子**（`GROWTH` 3 + `IMMUNE` 7）。`NOISE` の最上位は11位。
-- **符号が規則と一致**します。`GROWTH` は7個すべて正、`IMMUNE` は7個すべて負
+- 上位10位がすべて因果遺伝子（`GROWTH` 3 + `IMMUNE` 7）
+- `NOISE` の最上位は11位
+- 符号が規則と一致します。`GROWTH` は7個すべて正、`IMMUNE` は7個すべて負
   （`responder = +growth − immune`）。`NOISE` は符号がばらつき、下位に集まります。
-- `sample_feature_ig` の絶対値は小さい（`stage` −0.035、他は ≤0.002）。発現量だけで
-  ほぼ説明できてしまうためで、`gnn_mlp` と `gnn_mlp_cov` の AUC 差が小さいことと整合します。
+- `sample_feature_ig` の絶対値は小さい（`stage` −0.035、他は ≤0.002）。発現量だけでほぼ説明できてしまうためで、`gnn_mlp` と `gnn_mlp_cov` の AUC 差が小さいことと整合します。
 
-同時に `top_graph_nodes.tsv`（グラフ埋め込みへの帰属。`per_group_rankings: true` なので
-組織別も3つ）、`attributions.npz`、`ig_summary.json` が出ます。`ig_summary.json` の
-`degree_ig_pearson_r`（ここでは 0.53）は「帰属が単にノード次数を反映していないか」の
-健全性チェックです。
+同時に `top_graph_nodes.tsv`（グラフ埋め込みへの帰属。`per_group_rankings: true` なので生体組織別も3つ）、`attributions.npz`、`ig_summary.json` が出ます。
+`ig_summary.json` の`degree_ig_pearson_r`（ここでは 0.53）は「帰属が単にノード次数を反映していないか」の健全性チェックです。
 
 ### 4.8 ⑧ 学習済みモデルで予測表を出す
 
@@ -369,9 +344,11 @@ sample_index  probability  prediction  label  group     row_expression  row_tiss
 ... 55 more rows
 ```
 
-`outputs/sample/pred/` に4つ出ます。**`predictions.tsv` が予測結果の表**（上の全60行）、
-`predictions_by_group.tsv` がグループ別集計、`predictions.npz` が同じ内容の配列、
-`summary.json` が件数・閾値・確率の分布・指標・**チェックポイントの学習元**です。
+`outputs/sample/pred/` に4つ出ます。
+- `predictions.tsv`: 予測結果の表（上の全60行）
+- `predictions_by_group.tsv` がグループ別集計
+- `predictions.npz` が同じ内容の配列
+- `summary.json` が件数・閾値・確率の分布・指標・チェックポイントの学習元です。
 
 ```text
 group     samples  predicted_positive  predicted_positive_ratio  label_positive  accuracy
@@ -382,15 +359,14 @@ TISSUE_C  20       10                  0.5000                    11             
 
 `row_<alias>` 列があるので、各予測がどの発現行・どの組織シグネチャ行から出たかを追えます。
 
-**本来の使い方は「別に用意したデータ」を指すことです。** 新しいサンプルを同じグラフの上で
-汎用形式に前処理し、`dataset.dir` をそのディレクトリに向ければ、設定の他の部分は変わりません。
-このリポジトリには外部データがないので、**同梱の設定は `data_sample/prepared` 自身を指しています**。
-そのため上の指標は**モデルの評価ではなく配線の確認**です（60行のうち48行が §4.5 の学習・検証に
-使われた行）。このチェックポイントの実際の評価値は §4.5 の test 側で、
-**同じ行に `pred` を当てるとその値を完全に再現します**（テストで固定しています）。
+`pathwaygnn pred` の本来の使い方は「別に用意した外部データ」を指定してテストすることです。
+新しいサンプルを同じグラフの上で汎用形式に前処理し、`dataset.dir` をそのディレクトリに向ければ、設定の他の部分は変わりません。
+このリポジトリには外部データがないので、同梱の設定は `data_sample/prepared` 自身を指しています。
+そのため上の指標はモデルの評価ではなく動作確認です。
+このチェックポイントの実際の評価値は §4.5 の test 側で、同じ行に `pred` を当てるとその値を完全に再現します（テストで固定しています）。
 
-`checkpoint:` には §4.5 の `finetune` の `best.pt` でも §4.3 の `cv` の fold の `model.pt` でも
-渡せます。キーの一覧は [README_config.md](README_config.md) §8 にあります。
+`checkpoint:` には §4.5 の `finetune` の `best.pt` でも §4.3 の `cv` の fold の `model.pt` でも渡せます。
+キーの一覧は [README_config.md](README_config.md) §8 にあります。
 
 ### 4.9 結果を表にする / 片付ける
 
@@ -416,9 +392,8 @@ writer.finish()                                                        # 4. 検�
 ```
 
 あとは `configs/sample/` を `configs/mydata/` にコピーして `dataset.yaml` の
-`name` / `dir` を書き換えれば、`pretrain` / `cv` / `finetune` / `benchmark` / `ig` が
-そのまま動きます。**エンジン側の変更は不要**です。
-CLI に自分の前処理を登録する場合は `src/pathwaygnn_datasets/cli.py` に1分岐足します。
+`name` / `dir` を書き換えれば、`pretrain` / `cv` / `finetune` / `benchmark` / `ig` がそのまま動きます（エンジン側の変更は不要）。
+CLI に自分の前処理を登録する場合は `src/pathwaygnn_datasets/cli.py` に分岐を足す必要があります。
 
 ---
 
@@ -433,8 +408,7 @@ CLI に自分の前処理を登録する場合は `src/pathwaygnn_datasets/cli.p
 `RelationalGIN` は **1関係 × 1層ごとに GINConv と線形射影**を持ち、関係方向に和をとって
 ELU + dropout、全層を連結して線形読み出しに渡します。ノード特徴は学習される
 `nn.Embedding` なので、forward は常に**全グラフ**です（近傍サンプリングをしません）。
-Integrated Gradients が埋め込み行列をスケールできるように `forward_from_embedding` があり、
-2経路の等価性はテストで保証しています。
+Integrated Gradients が埋め込み行列をスケールできるように `forward_from_embedding` があり、2経路の等価性はテストで保証しています。
 
 サンプルレベルヘッド `SampleLevelModel` は1つで全データセットを表現します。
 node-level feature ごとに「値をスカラー射影 → （グラフ使用時）ノード埋め込みを加算 →
@@ -446,14 +420,13 @@ sample-level feature 分岐を連結して1ロジットにします。
 - dense は `reshape().sum()`、sparse は `index_add_` で集約します（数学的に等価。
   ただし加算順序が変わるため、再現性のために互いに置き換えません）。
 
-学習ループは素の PyTorch です（PyTorch Lightning を使いません）。全グラフ forward、
-rank別エッジサンプリング、分散集約、rank 0 のみのチェックポイント保存を明示的に制御する方が、
-この用途では障害解析と再現性に優れるためです。
+学習ループは素の PyTorch です（PyTorch Lightning を使いません）。
+全グラフ forward、rank別エッジサンプリング、分散集約、rank 0 のみのチェックポイント保存を明示的に制御する方が、この用途では障害解析と再現性に優れるためです。
 
 - `training/pretrain.py` — 唯一の分散ループ。DDP の各 rank は同じグラフ上で異なる
   正例・負例エッジを引き、勾配を all-reduce します（グローバルバッチ = `WORLD_SIZE × batch_size`、
   seed = `seed + rank`）。`training.partition:` を書くと、全グラフ forward の代わりに
-  **METIS 分割のバッチが張る部分グラフ**で1ステップを回すモードに切り替わり、
+  METIS 分割 のバッチが張る部分グラフで1ステップを回すモードに切り替わり、
   1ステップのメモリがグラフのサイズから切り離されます（§6.1）。
 - `training/cv.py` — 汎用グリッド、fold単位の再開、グループ別AUC。単一プロセスです
   （`cancer` のグリッドは DDP ではなく、GPU ごとに `cv` を1プロセス起動して分配します）。
@@ -490,21 +463,19 @@ torchrun \
   -m pathwaygnn.cli pretrain --config configs/tr/pretrain.yaml
 ```
 
-`best.pt` / `last.pt` は rank 0 のみが保存します。NCCL は GPU、Gloo は CPU で自動選択されます。
-教材データは20ノードしかないので分散の意味がありません（`configs/sample/pretrain.yaml` は
-`device: cpu`）。
+`best.pt` / `last.pt` は rank 0 のみが保存します。
+NCCL は GPU、Gloo は CPU で自動選択されます。
+教材データは20ノードしかないので分散の意味がありません（`configs/sample/pretrain.yaml` は`device: cpu`）。
 
 ### 6.1 グラフ分割による分散実行（大規模グラフ）
 
-上の DDP は**各 rank がグラフ全体を持ちます**。1ステップの活性は
-`ノード数 × hidden_dim × 関係数` で増えるので、rank を増やしてもグラフが大きくなれば
-どこかで載らなくなります。実測では `data_cdr`（13,606ノード・**356関係**）の全グラフ
-forward+backward が **14.1 GiB** です。
+上の DDP は**各 rank がグラフ全体を持ちます**。
+1ステップの各rankの必要メモリは　`ノード数 × hidden_dim × 関係数` で増えるので、rank を増やしてもグラフが大きくなればどこかで載らなくなります。
+実測では `data_cdr`（13,606ノード・**356関係**）の全グラフforward+backward が **14.1 GiB** です。
 
-グラフ分割モードは Cluster-GCN の考え方でこの上限を外します。グラフを METIS で
-`num_parts` 個に切っておき、1ステップは**そのうち `parts_per_batch` 個が張る部分グラフだけ**を
-計算します。メモリはグラフのサイズではなくバッチで決まり、rank には**互いに素な
-パーティション**が配られます（`DistributedSampler`）。
+グラフ分割モードは Cluster-GCN の考え方でこの上限を外します。
+グラフを METIS で`num_parts` 個に切っておき、1ステップは**そのうち `parts_per_batch` 個が張る部分グラフだけ**を
+計算します。メモリはグラフのサイズではなくバッチで決まり、rank には**互いに素なパーティション**が配られます（`DistributedSampler`）。
 
 ```bash
 # ① グラフを1回だけ切る（グラフ全体をメモリに載せる唯一の工程）
@@ -514,8 +485,8 @@ pathwaygnn partition --config configs/tr/pretrain_partitioned.yaml
 NPROC_PER_NODE=4 bash scripts/tr/pretrain_partitioned.sh
 ```
 
-実測（`data_cdr`、`num_parts: 64`、`hidden_dim: 64`、RTX PRO 6000。ピークメモリは
-パラメータ・勾配・optimizer 状態が載った状態での値、つまり「載るかどうか」を決める値）:
+実測（`data_cdr`、`num_parts: 64`、`hidden_dim: 64`、RTX PRO 6000。
+ピークメモリはパラメータ・勾配・optimizer 状態が載った状態での値、つまり「載るかどうか」を決める値）:
 
 | モード | 1ステップのノード数 | ピークメモリ | 1ステップ | 1周で見えるエッジ | 1周の時間 |
 | --- | --- | --- | --- | --- | --- |
@@ -525,16 +496,14 @@ NPROC_PER_NODE=4 bash scripts/tr/pretrain_partitioned.sh
 | 分割 `parts_per_batch: 8` | 1,701 | 1.93 GiB | 468 ms | 59.6% | 3.8 s |
 | 分割 `parts_per_batch: 16` | 3,402 | 3.67 GiB | 493 ms | 67.0% | 2.0 s |
 
-**この表は「メモリを時間と忠実度で買う」ことを示しています。** 1ステップの時間はほとんど
-減りません（関係ごとに GINConv を1つ走らせるので、部分グラフを小さくしても
-356回のカーネル起動は消えない）。したがって**1周あたりの時間は分割数とともに増えます**。
+**この表は「メモリを時間と忠実度で買う」ことを示しています**
+1ステップの時間はほとんど減りません（関係ごとに GINConv を1つ走らせるので、部分グラフを小さくしても356回のカーネル起動は消えない）。
+したがって**1周あたりの時間は分割数とともに増えます**。
 分割は「載らないグラフを載せる」ための手段で、載るグラフを速くするものではありません。
 
-参考に `data_tr`（30,895ノードbut **13関係**）では全グラフでも 1.47 GiB / 30 ms しか
-かからないので、この設定では**分割は不要**です。効くのは関係数の多い `cdr` 型、
-あるいはこれより大きなグラフ・大きな `hidden_dim` です。
-分割数 × バッチ幅の全組み合わせ（68条件）の実測は
-**[docs/dist_report.md](docs/dist_report.md)** にあります（`pathwaygnn dist-benchmark` の生成物）。
+参考に `data_tr`（30,895ノード、**13関係**）では全グラフでも 1.47 GiB / 30 ms しかかからないので、この設定では**分割は不要**です。
+効くのは関係数の多い `cdr` 型、あるいはこれより大きなグラフ・大きな `hidden_dim` です。
+分割数 × バッチ幅の全組み合わせ（68条件）の実測は [docs/dist_report.md](docs/dist_report.md) にあります（`pathwaygnn dist-benchmark` の生成物）。
 
 ```bash
 pathwaygnn dist-benchmark   --config configs/dist/benchmark.yaml   # 計測
@@ -548,24 +517,20 @@ pathwaygnn partition --config configs/sample/pretrain_partitioned.yaml
 pathwaygnn pretrain  --config configs/sample/pretrain_partitioned.yaml
 ```
 
-分割は `pretrain` から**切り離された別コマンド**です。グラフ全体をメモリに載せるのが
-そこだけなので、載る計算機で1回作り、学習側は分割ファイルしか読みません
+分割は `pretrain` から切り離された別コマンドです。
+グラフ全体をメモリに載せるのがそこだけなので、載る計算機で1回作り、学習側は分割ファイルしか読みません
 （`training.partition.create: false` にすると、グラフを読むフォールバックを禁止できます）。
 
-**トレードオフは明示的に選んでください。** 分割で切られたエッジはそのステップに現れず、
-負例の破壊先も部分グラフ内のノードに限られるので、**全グラフループと同じ数値にはなりません**。
-PathwayCommons 由来のグラフはハブが多く密で、`data_tr` を256分割すると1周で見えるエッジは
-13.4%、`parts_per_batch: 8` でも16.0%です（`shuffle: true` で毎エポック組み合わせが
-変わるため、切られたエッジも学習の過程では登場します）。キーごとの実測値は
+#### 分割の注意事項: 
+現状の実装では、分割で切られたエッジはそのステップに現れず、負例の破壊先も部分グラフ内のノードに限られるので、**全グラフループと同じ数値にはなりません**。
+PathwayCommons 由来のグラフはハブが多く密で、`data_tr` を256分割すると1周で見えるエッジは 13.4%、`parts_per_batch: 8` でも16.0%です（`shuffle: true` で毎エポック組み合わせが変わるため、切られたエッジも学習の過程では登場します）。
+キーごとの実測値は
 [README_config.md](README_config.md) §3 の `training.partition:` にあります。
-**大規模グラフを扱うための手段であり、既存の再現結果（cancer の公開数値など）は
-全グラフループのものです。** `training.partition` を書かなければ従来どおりで、
-損失はビット一致します。
+大規模グラフを扱うための手段であり、既存の再現結果（cancer の公開数値など）は全グラフループのものです。
+`training.partition` を書かなければ従来どおりで、損失は一致します。
 
-なお分割が効くのは事前学習（グラフ側のループ）です。`cv` / `finetune` /
-`ig` のサンプルレベルヘッドは全遺伝子の埋め込みを同時に必要とするため、分割の対象外です。
-分割学習で作った `best.pt` は、チェックポイントがグラフ全体のノード数を持つので
-これらのコマンドから**そのまま**使えます。
+なお分割が効くのは事前学習（グラフ側のループ）です。`cv` / `finetune` /　`ig` のサンプルレベルヘッドは全遺伝子の埋め込みを同時に必要とするため、分割の対象外です。
+分割学習で作った `best.pt` は、チェックポイントがグラフ全体のノード数を持つのでこれらのコマンドからそのまま使えます。
 
 ---
 
@@ -583,8 +548,7 @@ pathwaygnn hg --config configs/tr/hub.yaml
 `pathwaygnn.json`（機械可読なマニフェスト）、`README.md`（モデルカード）を組み立てます。
 モデルカードの Usage 節には**そのまま貼れる設定行**が入ります。
 
-**受け取る側に新しいコマンドは要りません。** チェックポイントを指すキーはすべて
-`hf://` 参照を受け付けます。
+モデル利用側に新しいコマンドは不要で、チェックポイントを指すキーはすべて`hf://` 参照を受け付けて自動で利用可能です。
 
 ```yaml
 # configs/tr/cv.yaml など（`pretrained_checkpoint` を持つ全コマンド）
@@ -597,13 +561,13 @@ checkpoint: hf://your-account/pathwaygnn-tr-oe-act/model.pt
 resume_from: hf://your-account/pathwaygnn-tr-encoder/model.pt
 ```
 
-`resume_from` は**本当の再開**です。重み・optimizer のモーメント・エポック番号に加えて
-**エッジサンプラの乱数ストリームまで復元**するので、**中断せずに回した場合とビット一致します**
-（`training.epochs` は「ここから追加で回すエポック数」）。公開モデルの形状が
-手元の `model:` ブロックより優先されるため、静かに作り替えられることもありません。
+`resume_from` は**本当の再開**です。
+重み・optimizer のモーメント・エポック番号に加えて**エッジサンプラの乱数ストリームまで復元**するので、**中断せずに回した場合とビット一致します**
+（`training.epochs` は「ここから追加で回すエポック数」）。
+公開モデルの形状が手元の `model:` ブロックより優先されるため、静かに作り替えられることもありません。
 
-既定は `private: true`、`dry_run: true` です（公開は明示的な選択）。認証は
-`hf auth login` か `HF_TOKEN` を推奨します（設定ファイルにトークンを書かないでください）。
+既定は `private: true`、`dry_run: true` です（公開は明示的な選択）。
+認証は`hf auth login` か `HF_TOKEN` を推奨します（設定ファイルにトークンを書かないでください）。
 キーの一覧は [README_config.md](README_config.md) §9 にあります。
 
 ---
@@ -653,7 +617,7 @@ pathwaygnn-data tr-report --config configs/tr/report.yaml   # -> docs/tr_report.
 `cv` のアブレーションは2条件（`mlp` / `gnn_mlp`）です。ラベルは陽性8.2%と不均衡なので
 `pos_weight: auto` を使います（教材データは均衡なので不要でした）。
 
-### 7.3 `data_cancer` — TCGA がん予後（Inoue et al. の再現）
+### 7.3 `data_cancer` — TCGA がん予後
 
 TCGA 発現プロファイルから診断後 n 年（1〜5年）の生存を二値予測します。
 論文の Table 1（4モデル × 5年 = 20条件）、がん種別AUC、Integrated Gradients を再現します。
@@ -671,10 +635,8 @@ groups はがん種。**論文の数値がコード内に定数として入っ�
 （`pathwaygnn_datasets/cancer/paper.py`）、`cancer-prepare` が年ごとのサンプル数を検証し、
 `cancer-report` が 論文値 / 再現値 / 差分の表を出します。
 
-このデータセットには**再現のために保存されているクセ**があります
-（`selection: final_epoch`、`loss_clip: 0.01`、`loss_reduction: sum`、`grad_clip_value: 10.0`、
-`shuffle: false`、`num_layers: 2`）。汎用の既定値は素直な側（`mean`、clipなし、`final_epoch`）で、
-がんの設定が明示的に上書きしています。プロトコルを変える意図がない限り触らないでください。
+このデータセットには再現性のために次の設定が指定されています（`selection: final_epoch`、`loss_clip: 0.01`、`loss_reduction: sum`、`grad_clip_value: 10.0`、`shuffle: false`、`num_layers: 2`）。
+汎用の既定値は素直な側（`mean`、clipなし、`final_epoch`）で、がんの設定が明示的に上書きしています（変更すると再現性が失われる可能性があります）。
 
 ### 7.4 `data_cdr` — GDSC 薬剤感受性（GraphCDRScan）
 
@@ -691,8 +653,7 @@ bash scripts/cdr/reproduce.sh                             # pretrain / cv / fine
 教材データとの対応が最も分かりやすい例です。
 
 - node-level feature `mutation`（sparse）は細胞株にしか依存しないため、
-  **107,418サンプルが760行を共有**します（`rows/mutation.npy`)。教材データで
-  60サンプルが3行の組織シグネチャを共有していたのと同じ仕組みです。
+  107,418サンプルが760行を共有します（`rows/mutation.npy`)。教材データで60サンプルが3行の生体組織シグネチャを共有していたのと同じ仕組みです。
 - sample-level feature は3,348次元（変異スペクトル96/78/83 + 原発部位one-hot + 化合物
   フィンガープリント3×1024）。教材データの4次元（年齢・性別・病期・喫煙）の実物版です。
 - groups は原発部位19種 → グループ別AUCがそのまま「がん種別AUC」。
@@ -747,23 +708,22 @@ conda run -n gnn python -m pytest          # 116件、数秒、CPU のみ
 小さな raw データと合成データセットを `tmp_path` に作り、前処理、汎用形式の読み書き、
 関係別 GIN、エッジ事前学習、dense/sparse node-level feature の等価性、可変長サンプル集約、
 逆伝播、層化分割、`cv` グリッドと fold 再開、`ig` の出力を検証します。
-`tests/test_tensor_shapes.py` は、モデル周辺の関数が受け渡すテンソルの**次元と dtype が
-docstring/コメントの記述どおりであること**を検証します（記述が陳腐化しないようにするため）。
-`tests/test_predict.py` は `pred` の表の列と行数、閾値の効き方、**`finetune` が報告した
+- `tests/test_tensor_shapes.py` は、モデル周辺の関数が受け渡すテンソルの次元と dtype が
+docstring/コメントの記述どおりであることを検証します（記述が陳腐化しないようにするため）。
+- `tests/test_predict.py` は `pred` の表の列と行数、閾値の効き方、**`finetune` が報告した
 test 指標を同じ行に対して完全再現すること**、別データセット（同じグラフ）を採点できること、
 ラベルが1クラスなら指標を出さないことを検証します。
-`tests/test_hub.py` は `hf://` 参照の解析、staging された payload の自己記述性、
-**dry run が何も送信しないこと**、`resume_from` が中断なしの学習とビット一致すること、
+- `tests/test_hub.py` は `hf://` 参照の解析、staging された payload の自己記述性、
+dry run が何も送信しないこと、`resume_from` が中断なしの学習とビット一致すること、
 公開モデルの形状が手元の設定より優先されることを検証します
 （`huggingface_hub` は入れず、`sys.modules` のスタブで代替します）。
-`tests/test_partition.py` は METIS 分割が全ノード・全エッジをちょうど1回覆うこと、
-パーティションのバッチが**その集合の誘導部分グラフと厳密に一致する**こと（分割をまたぐ
+- `tests/test_partition.py` は METIS 分割が全ノード・全エッジをちょうど1回覆うこと、
+パーティションのバッチがその集合の誘導部分グラフと厳密に一致すること（分割をまたぐ
 エッジを落とさないこと）、rank への割り当てが互いに素かつ同ステップ数になること
 （DDP の all-reduce が要求します）、`graph.pt` を消しても分割だけで学習できること、
 そして `training.partition` を書かなければ損失がビット一致することを検証します。
-`data_tr/` `data_cancer/` `data_cdr/` `outputs/` には触れません。
-`tests/test_sample_prepare.py` だけは例外的に**コミット済みの `data_sample/raw` を読み**、
-`scripts/sample/make_raw_data.py` がそれをバイト単位で再生成できることも確認します
+- `data_tr/` `data_cancer/` `data_cdr/` `outputs/` には触れません。
+- `tests/test_sample_prepare.py` だけは例外的にコミット済みのデータセット `data_sample/raw` を読み、`scripts/sample/make_raw_data.py` がそれをバイト単位で再生成できることも確認します
 （書き込みは `tmp_path` のみ）。
 
 ---
@@ -781,12 +741,12 @@ src/pathwaygnn/            学習エンジン（データセット非依存）
   training/                  pretrain / cv / finetune / benchmark / ig / pred / metrics / distributed
                              dist_benchmark（分割数 × バッチ幅の時間・メモリ計測）
 src/pathwaygnn_datasets/   コーパスごとの前処理とレポート
-  sample/prepare.py          ★最小の実装例（約240行）
+  sample/prepare.py          最小の実装例（約240行）
   tr/ cancer/ cdr/           各コーパスの build / prepare / report
   dist/report.py             グラフ分割ベンチマークの文書化（データセット非依存）
 configs/{sample,tr,cancer,cdr}/   実験設定（dataset.yaml を defaults で取り込む）
 scripts/{sample,tr,cancer,cdr}/   取得・再現スクリプト
-data_sample/               ★コミット済みの教材データ（raw 12 KB）
+data_sample/               教材データ（raw 12 KB）
 data_{tr,cancer,cdr}/      実データ（README.md 以外は Git 管理外）
 docs/                      生成されるレポート（docs/papers/ 以外はすべて生成物）
                            <名前>.md と <名前>.html は同一ソースから生成。html は
@@ -796,11 +756,10 @@ outputs/                   学習結果（Git 管理外）
 tests/                     pytest（合成データのみで完結）
 ```
 
-`prepared` データ、学習結果、チェックポイントは `.gitignore` 対象です。`raw` と `processed` も
-容量のため対象外です（`data_tr` 21.5 GB、`data_cdr` 1.6 GB / 9.3 GB。COSMIC のように
-登録が必要な入力もあります）。いずれも取得スクリプトと build コマンドで再生成します。
-**唯一の例外が `data_sample/raw/`** で、これはクローン直後にチュートリアルを動かすために
-コミットされています。
+`prepared` データ、学習結果、チェックポイントは `.gitignore` 対象です。
+`raw` と `processed` も容量のため対象外です（`data_tr` 21.5 GB、`data_cdr` 1.6 GB / 9.3 GB。COSMIC のように登録が必要な入力もあります）。
+いずれも取得スクリプトと build コマンドで再生成します。
+ `data_sample/raw/`** は、例外的にこれはクローン直後にチュートリアルを動かすためにリポジトリに含まれています。
 
 ライセンスは [LICENSE](LICENSE)（MIT）です。各コーパスの元データはそれぞれの
 配布条件に従ってください（`data_*/README.md` に出典を記載しています）。
