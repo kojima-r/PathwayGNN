@@ -121,7 +121,12 @@ def run_prediction(cfg: dict[str, Any]) -> dict[str, Any]:
         # load_encoder refuses a graph whose node or relation count differs, which
         # is the guard against scoring data prepared over a different graph.
         encoder, _ = load_encoder(
-            cfg["pretrained_checkpoint"], dataset.num_nodes, dataset.num_relations, device
+            cfg["pretrained_checkpoint"],
+            dataset.num_nodes,
+            dataset.num_relations,
+            device,
+            node_names=dataset.node_names(),
+            node_embeddings=cfg.get("model", {}).get("node_embeddings"),
         )
         if checkpoint["encoder"] is not None:
             encoder.load_state_dict(checkpoint["encoder"])

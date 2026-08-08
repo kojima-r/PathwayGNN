@@ -100,14 +100,21 @@ def run_ig(cfg: dict[str, Any]) -> dict[str, Any]:
     base_embedding: Tensor | None = None
     if use_graph:
         encoder, _ = load_encoder(
-            cfg["pretrained_checkpoint"], dataset.num_nodes, dataset.num_relations, device
+            cfg["pretrained_checkpoint"],
+            dataset.num_nodes,
+            dataset.num_relations,
+            device,
+            node_names=dataset.node_names(),
+            node_embeddings=cfg.get("model", {}).get("node_embeddings"),
         )
         if checkpoint["encoder"] is not None:
             encoder.load_state_dict(checkpoint["encoder"])
         encoder.eval()
         edge_index, edge_type = dataset.graph()
         graph = (edge_index.to(device), edge_type.to(device))
-        base_embedding = encoder.embedding.weight.detach()
+        # The matrix the graph actually convolves: adapted external vectors on the
+        # nodes that have one, learned rows elsewhere. Attribution is over that.
+        base_embedding = encoder.node_embedding_matrix().detach()
     predictor = SampleLevelModel.from_config(model_config).to(device)
     predictor.load_state_dict(checkpoint["predictor"])
     predictor.eval()

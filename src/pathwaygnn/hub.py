@@ -163,6 +163,17 @@ def _card(description: dict[str, Any], reference: HubReference, cfg: dict[str, A
             f"{model_config.get('hidden_dim')}, {model_config.get('num_layers')} layers. "
             "Pre-trained on edge prediction with a DistMult relation embedding."
         )
+        if model_config.get("node_embeddings"):
+            external = model_config["node_embeddings"]
+            verb = (
+                "replacing" if external.get("combine") == "replace" else "added to"
+            )
+            what += (
+                f" For {external.get('num_covered')} of its nodes, a per-group adapter maps a "
+                f"vector from the external table `{external.get('path')}` into the embedding, "
+                f"{verb} the learned row; that table is **not** bundled here, so set "
+                "`model.node_embeddings.path` to your copy of it."
+            )
         usage = [
             "Point any downstream config at it — `cv`, `finetune`, `ig` and `pred` all",
             "accept a Hub reference where they accept a path:",

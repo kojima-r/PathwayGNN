@@ -15,6 +15,7 @@
 | [このREADME](README.md)  | 全体像、チュートリアル、各データセットの使い方 |
 | [README: config](README_config.md) | `configs/` の YAML 全項目のリファレンス（既定値・設定値の解説） |
 | [README: data_sample](data_sample/README.md) | チュートリアル用データの詳細（生成規則、列レイアウト、汎用形式との対応） |
+| [README: embedding_pc](embedding_pc/README.md) | PathwayCommons ノードの外部埋め込み（ESMC-6B / Uni-Mol）の作り方。使い方は §5.1 |
 | [README: data_tr](README_data_tr.md) / [data_tr/README.md](data_tr/README.md) | target repositioning 応用例のための元データと前処理 |
 | [README: data_cancer](README_data_cancer.md) / [data_cancer/README.md](data_cancer/README.md) | TCGA を使ったがん予後予測の応用例のための元データと前処理 |
 | [README: data_cdr](README_data_cdr.md) / [data_cdr/README.md](data_cdr/README.md) | GDSC を使った薬剤感受性予測応用例のための元データと前処理 |
@@ -407,7 +408,8 @@ CLI に自分の前処理を登録する場合は `src/pathwaygnn_datasets/cli.p
 
 `RelationalGIN` は **1関係 × 1層ごとに GINConv と線形射影**を持ち、関係方向に和をとって
 ELU + dropout、全層を連結して線形読み出しに渡します。ノード特徴は学習される
-`nn.Embedding` なので、forward は常に**全グラフ**です（近傍サンプリングをしません）。
+`nn.Embedding`（外部ベクトルを併用する設定は §5.1）なので、forward は常に**全グラフ**です
+（近傍サンプリングをしません）。
 Integrated Gradients が埋め込み行列をスケールできるように `forward_from_embedding` があり、2経路の等価性はテストで保証しています。
 
 サンプルレベルヘッド `SampleLevelModel` は1つで全データセットを表現します。
@@ -436,6 +438,97 @@ sample-level feature 分岐を連結して1ロジットにします。
 
 encoder を凍結する設定（`training.train_encoder: false`、または `end_to_end: false` の variant）では
 埋め込みを1回だけ計算して再利用します。これが両ループの主な高速化レバーです。
+
+### 5.1 外部ノード埋め込み（`embedding_pc/` の配列・構造ベクトルを encoder に入れる）
+
+既定では encoder の入力は学習される `nn.Embedding` だけで、ノードは「グラフ上の位置」しか
+持ちません。[`embedding_pc/`](embedding_pc/README.md) は PathwayCommons の participant に対して
+**タンパク質は UniProt 配列を ESMC-6B で（2,560次元）、化合物は ChEBI の SMILES を Uni-Mol で
+（512次元）** 埋め込んだ表 `processed/node_embeddings.npz`（同内容の `node_embeddings.json` も可）を作ります。
+これを `model.node_embeddings:` に書くと、その表が名前を持つノードだけ、
+**種別ごとのアダプタ（`nn.Linear(D → hidden_dim)`）を通した外部ベクトル**が encoder の入力に入ります。
+
+```text
+node_embeddings.npz       nodes.json と名前で突き合わせ         encoder への入力 [N, hidden_dim]
+  protein 19,360 x 2560 ──┐                        ┌── Linear(2560 → H) ──┐
+  chemical 10,236 x 512 ──┴─ 該当ノードだけ抽出 ───┴── Linear( 512 → H) ──┴─▶ 学習される
+   + 別名 (HGNC ID など)                                                    nn.Embedding の行に加算
+  表に載っていないノード ───────────────────────────────────────────────▶ nn.Embedding の行のまま
+```
+
+- **名前で突き合わせます。** 表のキーは SIF の participant 表記（タンパク質 = gene symbol、
+  化合物 = `CHEBI:xxxx`）で、`prepared/nodes.json` と一致した行だけが使われます。
+  `data_tr` は 30,895 ノード中 **28,735（93.0%、protein 18,501 + chemical 10,234）** が一致します。
+- **ノード名が gene symbol でないコーパスには「別名」を使います。**
+  `embedding_pc/scripts/build_gene_ids.py`（HGNC complete set から作成）があると、
+  `build_node_embeddings.py` は **HGNC ID / Entrez ID / Ensembl ID → 行番号** の対応を
+  ベクトルを複製せずに表へ入れます。`data_cancer` はノード名が数値 HGNC ID なので、
+  `aliases: [hgnc_id]` を足すと被覆が **10,646（34.4%）→ 29,566（95.6%、うち 18,920 が別名経由）**
+  になります（`configs/cancer/pretrain_pc_embedding.yaml`）。
+  **どの体系かは自動判定しません**: HGNC ID も Entrez ID も裸の数値で、`5` は HGNC:5 = A1BG とも
+  Entrez 5 = 別遺伝子とも読めるためです。指定しなければ別名は一切使いません。
+  `data_cdr` も数値 HGNC ID で、`aliases: [hgnc_id]` にすると 13,606 中 **13,433（98.7%）** が当たります
+  （どちらも未指定だと1つも当たらずエラーになります）。
+- **一致しなかったノードは今までどおり `nn.Embedding`** です。両者は排他で、
+  同じノードが2つの種別に載っていれば読み込み時にエラーにします。
+- **アダプタだけが学習し、外部ベクトルは凍結**します。ベクトルは `persistent=False` の buffer なので
+  チェックポイントには入らず（+2 MB、`hidden_dim: 64` でアダプタは 196,736 パラメータ）、
+  代わりに `model_config.node_embeddings` に**読み込み元のパスと各種設定が記録**されます。
+  `cv` / `finetune` / `ig` / `pred` はその記録を見て自分で表を読み直すので、
+  **事前学習以外のコマンドの設定は書き換え不要**です（表を移動したときだけ
+  `model.node_embeddings.path` で上書きします）。
+- **`training.partition:` とも併用できます。** 部分グラフのステップでも同じ行が使われます。
+- Integrated Gradients の帰属先も「実際に畳み込まれた行列」になります
+  （外部ベクトル由来の行を含む `[N, hidden_dim]`）。
+
+```bash
+# configs/tr/pretrain_pc_embedding.yaml = configs/tr/pretrain.yaml に下の設定を足しただけ
+pathwaygnn pretrain --config configs/tr/pretrain_pc_embedding.yaml
+#   -> outputs/tr/pretrain_pc_embedding/best.pt
+
+# 以降は pretrained_checkpoint をその best.pt に向けるだけでよく、
+# それらの設定に model.node_embeddings を書く必要はない（checkpoint に記録済み）
+pathwaygnn cv --config configs/tr/cv.yaml
+```
+
+```yaml
+model:
+  node_embeddings:
+    path: embedding_pc/processed/node_embeddings.npz
+    normalize: l2       # l2（既定） / standardize / none
+    combine: add        # add（既定） / replace
+    aliases: []         # 既定は空。data_cancer なら [hgnc_id]
+```
+
+`normalize` は**何を残すか**、`combine` は**学習される行との関係**を決めます（詳細と既定値は
+[README_config.md §3](README_config.md)）。アダプタの初期化は種別ごとの入力 RMS で割ってあるので、
+`normalize` を変えても初期スケールは変わりません（`init_std`、既定は `add` で 0.01 = 学習行の1/10、
+`replace` で 0.1 = 学習行と同じ）。
+
+**測定値（`data_tr`、RTX PRO 6000 1枚、100 epoch、それ以外は `configs/tr/pretrain.yaml` と同一。
+CV は `configs/tr/cv.yaml` の `oe_act` / `gnn_mlp` だけを、両方の checkpoint に対して
+同じ日に走らせた対の実測値です。[docs/tr_report.md](docs/tr_report.md) の 0.713 とは
+別の run なので、比べるのは同じ表の中だけにしてください）**
+
+| 事前学習 | epoch 1 loss | epoch 100 loss | epoch 100 accuracy | `oe_act` の 5-fold CV AUC（`gnn_mlp`） |
+| --- | --- | --- | --- | --- |
+| 外部埋め込みなし（既定） | 12.91 | **0.967** | **0.867** | **0.735 ± 0.039** |
+| `l2` + `add`（既定） | 45.85 | 1.273 | 0.785 | 0.723 ± 0.036 |
+| `l2` + `replace` | 4597 | 2.059 | 0.735 | — |
+| `standardize` + `add` | 19.32 | 8.487 | 0.657 | — |
+
+`data_cancer`（`aliases: [hgnc_id]`、`configs/cancer/pretrain.yaml` の 50 epoch）でも同じ傾向で、
+best epoch の loss / accuracy は **1.477 / 0.704 → 1.524 / 0.648**（外部埋め込みなし → あり）です。
+
+読み方: **エッジ予測の当てはまりは外部ベクトルを入れると必ず悪くなります**。
+93% のノードの表現が凍結ベクトルの線形像に縛られる以上これは当然で、
+`combine: replace`（学習行を完全に置き換える）や `normalize: standardize`
+（ESMC ベクトルのほぼ定数の次元まで等分散に引き伸ばす）ほど悪化が大きくなります。
+下流の `oe_act` でも 0.723 ± 0.036 と、ベースライン 0.735 ± 0.039 に対して
+**fold 間のばらつきの内側**で、この設定では改善は観測できていません。
+既定値（`l2` + `add`）は「この中では最も素直に学習が進む組み合わせ」という意味で、
+**外部埋め込みが効くという主張ではありません**。他のコーパス・他の埋め込みモデルで試すための
+配線として用意してあります。
 
 ---
 
@@ -702,7 +795,7 @@ seed + task.seed_offset * 1000 + fold + variant.seed_index * 100
 ## 9. テスト
 
 ```bash
-conda run -n gnn python -m pytest          # 116件、数秒、CPU のみ
+conda run -n gnn python -m pytest          # 131件、数秒、CPU のみ
 ```
 
 小さな raw データと合成データセットを `tmp_path` に作り、前処理、汎用形式の読み書き、
@@ -735,6 +828,7 @@ src/pathwaygnn/            学習エンジン（データセット非依存）
   data/format.py             汎用データ形式の定義と DatasetWriter
   data/samples.py            タスク → バッチ（dense/sparse の可変長集約）
   data/partition.py          METIS グラフ分割と、その上の Cluster-GCN ローダ
+  data/node_embeddings.py    外部ノード埋め込み表の読み込みと nodes.json との突き合わせ
   hub.py                     HuggingFace Hub への公開と hf:// 参照の解決
   models/encoder.py          RelationalGIN、GraphPretrainer、load_encoder
   models/predictor.py        SampleLevelModel（両データセット共通のヘッド）
@@ -746,6 +840,7 @@ src/pathwaygnn_datasets/   コーパスごとの前処理とレポート
   dist/report.py             グラフ分割ベンチマークの文書化（データセット非依存）
 configs/{sample,tr,cancer,cdr}/   実験設定（dataset.yaml を defaults で取り込む）
 scripts/{sample,tr,cancer,cdr}/   取得・再現スクリプト
+embedding_pc/              PathwayCommons ノードの外部埋め込み（配列・構造）の作成スクリプト
 data_sample/               教材データ（raw 12 KB）
 data_{tr,cancer,cdr}/      実データ（README.md 以外は Git 管理外）
 docs/                      生成されるレポート（docs/papers/ 以外はすべて生成物）

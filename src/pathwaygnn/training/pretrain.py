@@ -11,6 +11,7 @@ from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel
 
 from pathwaygnn.data.format import GraphDataset, open_dataset
+from pathwaygnn.data.node_embeddings import load_node_embeddings
 from pathwaygnn.data.partition import (
     GraphPartitionBatch,
     PartitionLoader,
@@ -168,6 +169,12 @@ def run_pretraining(cfg: dict[str, Any]) -> None:
             # by whatever `model:` block happens to be in the local config.
             model_cfg = {**model_cfg, **resume["model_config"]}
         dropout = float(model_cfg.get("dropout", 0.1))
+        # Matched by name against nodes.json, so this reads no graph and works in
+        # partition mode too. Absent from the config, the encoder keeps a learned
+        # embedding for every node, and nothing below this line changes.
+        external = load_node_embeddings(model_cfg.get("node_embeddings"), dataset.node_names())
+        if external is not None and context.primary:
+            print(json.dumps({"node_embeddings": external.spec}))
         model = GraphPretrainer(
             RelationalGIN(
                 num_nodes,
@@ -175,6 +182,7 @@ def run_pretraining(cfg: dict[str, Any]) -> None:
                 hidden_dim=int(model_cfg.get("hidden_dim", 64)),
                 num_layers=int(model_cfg.get("num_layers", 2)),
                 dropout=dropout,
+                external=external,
             )
         ).to(context.device)
         if resume is not None:

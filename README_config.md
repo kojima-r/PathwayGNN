@@ -77,6 +77,7 @@ dataset:
 | `model.hidden_dim` | int | `64` | ノード埋め込みと各 GIN 層の次元。**この値が下流の `cv`/`finetune` の `embedding_dim` を決める**（グラフを使う variant では `model.embedding_dim` は無視され encoder の `hidden_dim` が使われる）。 |
 | `model.num_layers` | int | `2` | GIN 層数。全層の出力を連結して readout する。 |
 | `model.dropout` | float | `0.1` | 各層出力の dropout。チェックポイントの `model_config` に記録される。 |
+| `model.node_embeddings` | dict / str / null | `null` | 外部ノード埋め込み表。書くと該当ノードだけ encoder の入力が外部ベクトル由来になる（下の小節）。 |
 | `training.epochs` | int | `100` | エポック数。 |
 | `training.steps_per_epoch` | int | `100` | 1エポックあたりのステップ数。**1ステップ＝全グラフ forward+backward 1回**なので、コストはサンプル数ではなくこの値に比例する。 |
 | `training.batch_size` | int | `4096` | 1 rank あたりの正例エッジ数。グローバルバッチは `WORLD_SIZE × batch_size`。 |
@@ -88,6 +89,48 @@ dataset:
 出力: `best.pt`（loss 最小）、`last.pt`、`history.json`、`config.json`。
 分散実行は `WORLD_SIZE` / `LOCAL_RANK` 環境変数で自動判定し（`torchrun`）、
 CUDA なら NCCL、なければ Gloo。rank ごとの seed は `seed + rank`、書き込みは rank 0 のみ。
+
+### `model.node_embeddings:` — 事前計算した外部ベクトルを encoder の入力にする
+
+`src/pathwaygnn/data/node_embeddings.py` と `models/encoder.py:ExternalNodeEmbedding`。
+**このブロックが無ければ従来どおり**、encoder の入力は学習される `nn.Embedding` だけです
+（乱数の消費順も変わらないので、書かない設定は以前とビット一致します）。
+書くと、表が名前を持つノードだけ**種別ごとのアダプタ `nn.Linear(D → hidden_dim)`** を通した
+ベクトルが入り、表に無いノードは今までどおり `nn.Embedding` の行を使います。
+仕組みと実測値は [README.md §5.1](README.md)。
+
+```yaml
+model:
+  node_embeddings: embedding_pc/processed/node_embeddings.npz   # パス文字列だけの短縮形も可
+# あるいは
+model:
+  node_embeddings:
+    path: embedding_pc/processed/node_embeddings.npz
+    normalize: l2
+    combine: add
+    aliases: [hgnc_id]   # ノード名が gene symbol でないコーパス (data_cancer / data_cdr) で必要
+```
+
+| キー | 型 | 既定値 | 説明 |
+| --- | --- | --- | --- |
+| `path` | str | （必須） | ベクトル表。`.npz`（`<種別>_names` + `<種別>_embeddings` の組、または `names` + `embeddings`）か `.json`（`{ノード名: ベクトル}`）。JSON は隣に `<名前>.meta.json` があればその `node_type` で種別を分け、無ければ次元ごとに分ける。npz の方が速い（`data_tr` で読み込み 2.5 秒）。 |
+| `aliases` | list[str] | `[]` | 表の行を**別の ID 体系の名前でも**引けるようにする。npz なら `<種別>_alias_<体系>_names` + `_rows`、JSON なら meta の `alias_to_name.<体系>`。`embedding_pc` は `hgnc_id` / `entrez_id` / `ensembl_gene_id` を出す。**既定は空**（表のキーだけで突き合わせる）で、体系の自動判定はしない — HGNC ID も Entrez ID も裸の数値なので `5` がどちらの遺伝子か決められないため。表が持たない体系を指定するとエラー。順に評価し、ノードは最初に一致した行を取る（表のキー自身が最優先）。 |
+| `normalize` | str | `l2` | 何を残すか。`l2` = 行ごとに向きだけ（既定、`data_tr` で最も素直に学習が進む）。`standardize` = 覆っているノードで次元ごとに z 化。`none` = そのまま。初期スケールは別（下の `init_std`）なので、この選択は**大きさではなく中身**を変える。 |
+| `combine` | str | `add` | 該当ノードの行の作り方。`add` = 学習される行に加算（既定。ノードごとの自由度が残る）。`replace` = 学習される行を完全に置き換える（そのノードは外部ベクトルの線形像だけになる）。 |
+| `init_std` | float | `add` で `0.01`、`replace` で `0.1` | アダプタ初期化時の、外部ベクトル由来の行の1座標あたりの std。`nn.Embedding` は std `0.1` で初期化されるので、`add` は学習行の 1/10 から始めて必要なだけ開く、`replace` は同じ大きさから始める、という意味。種別ごとの入力 RMS で割るので `normalize` を変えても初期スケールは動かない。 |
+| `bias` | bool | `true` | アダプタ `nn.Linear` の bias。 |
+
+- **突き合わせはノード名**（`prepared/nodes.json`）です。1つも一致しなければエラーにします。
+  `data_tr` は gene symbol なのでそのまま 93.0% が当たり、`data_cancer`（数値 HGNC ID）は
+  `aliases: [hgnc_id]` で 34.4% → 95.6%、`data_cdr`（同じく数値 HGNC ID）は 0% → 98.7% になります。
+- **外部ベクトルは凍結**され、学習するのはアダプタだけです。ベクトルはチェックポイントに
+  入らず（`persistent=False` の buffer）、代わりに `model_config.node_embeddings` に
+  パスと上記の設定・被覆数が記録されます。
+- **`cv` / `finetune` / `ig` / `pred` は設定不要**です。`load_encoder` がその記録を読んで
+  表を読み直します。表を移動したときだけ、それらの設定にも同じ `model.node_embeddings.path`
+  を書けば上書きできます（`combine` とアダプタの形が食い違う表を指すとエラーになります）。
+- `pathwaygnn hg` で公開した encoder にも**ベクトル本体は含まれません**。
+  モデルカードにその旨とパスが出るので、受け取った側は自分の表を指す必要があります。
 
 ### `training.partition:` — グラフ分割による分散実行（大規模グラフ向け）
 
@@ -701,8 +744,10 @@ sample-level features（`age` / `sex_female` / `stage` / `smoker`）です。
 | `configs/sample/pretrain_partitioned.yaml` | グラフ分割モードの最小例（`pretrain.yaml` を継承） |
 | `configs/tr/{dataset,prepare,pretrain,cv,report}.yaml` | tr の基本一式 |
 | `configs/tr/pretrain_partitioned.yaml` | tr のグラフ分割 + 分散事前学習（`pathwaygnn partition` → `pretrain`） |
+| `configs/tr/pretrain_pc_embedding.yaml` | tr の事前学習に `embedding_pc` の外部ノード埋め込みを足した例（§3 の `model.node_embeddings:`） |
 | `configs/tr/{finetune,benchmark,ig}_{kd_inh,oe_act}.yaml` | tr のタスク別設定（`_oe_act` は `_kd_inh` を `defaults` で継承） |
 | `configs/cancer/{dataset,build_processed,prepare,pretrain,pretrain_sweep,cv,ig,report,id_mapping}.yaml` | cancer 再現一式 |
+| `configs/cancer/pretrain_pc_embedding.yaml` | cancer の事前学習に外部ノード埋め込みを足した例（`aliases: [hgnc_id]` が要る側の例） |
 | `configs/cdr/{dataset,prepare,pretrain,cv,report}.yaml` | cdr の基本一式 |
 | `configs/cdr/{finetune,benchmark,ig}_{drugwise,global}.yaml` | cdr のタスク別設定（`_global` は `_drugwise` を継承） |
 | `configs/dist/{benchmark,report}.yaml` | グラフ分割ベンチマークの計測とレポート（**データセット横断**、`datasets:` リストを取る） |

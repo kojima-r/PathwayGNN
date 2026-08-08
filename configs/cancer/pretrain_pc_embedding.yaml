@@ -1,0 +1,21 @@
+defaults:
+  - pretrain.yaml
+
+# `configs/cancer/pretrain.yaml` に外部ノード埋め込みを足しただけ。
+#
+# data_cancer のノード名は **数値 HGNC ID** と `CHEBI:*` なので、gene symbol で書かれた
+# 表のキーとは体系が違う。`aliases: [hgnc_id]` を指定すると embedding_pc が
+# `build_gene_ids.py` から作った「HGNC ID -> 行」の対応が使われ、被覆が
+# 10,646 (34.4%、化合物とたまたま symbol 表記だった 412 ノードだけ) から
+# **29,566 (95.6%、うち 18,920 が別名経由)** になる。
+#
+# 別名の体系は自動判定しない: HGNC ID も Entrez ID も裸の数値で、`5` は
+# HGNC:5 = A1BG でも Entrez 5 = 別の遺伝子でもありうるため。
+model:
+  node_embeddings:
+    path: embedding_pc/processed/node_embeddings.npz
+    aliases: [hgnc_id]
+    normalize: l2
+    combine: add
+
+output_dir: outputs/cancer/pretrain_pc_embedding

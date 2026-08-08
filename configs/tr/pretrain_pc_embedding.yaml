@@ -1,0 +1,34 @@
+defaults:
+  - dataset.yaml
+
+# `configs/tr/pretrain.yaml` with one addition: the nodes that `embedding_pc` has a
+# vector for carry it, through a per-group adapter, on top of their learned row.
+# The table names its rows (gene symbol / CHEBI:<id>), so it is matched against
+# nodes.json — for `tr` that covers 28,735 of 30,895 nodes (protein 18,501 +
+# chemical 10,234); the remaining 2,160 use nn.Embedding alone, as before.
+seed: 42
+device: auto
+
+model:
+  hidden_dim: 64
+  num_layers: 2
+  dropout: 0.1
+  node_embeddings:
+    path: embedding_pc/processed/node_embeddings.npz
+    # Both defaults, spelled out because they are what the measured runs in
+    # README.md §5.1 used: keep each vector's direction only, and *add* the adapted
+    # vector to the learned row rather than replacing it (`combine: replace` makes
+    # the covered nodes purely external, and pre-trains worse).
+    normalize: l2
+    combine: add
+    # `tr` のノード名は gene symbol で、表のキーと同じ体系なので別名は要らない
+    # (data_cancer は `aliases: [hgnc_id]` が必要。configs/cancer/pretrain_pc_embedding.yaml)
+
+training:
+  epochs: 100
+  steps_per_epoch: 1
+  batch_size: 8192
+  learning_rate: 0.001
+  weight_decay: 0.0001
+
+output_dir: outputs/tr/pretrain_pc_embedding

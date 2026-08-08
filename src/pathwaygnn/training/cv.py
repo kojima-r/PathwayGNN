@@ -189,7 +189,12 @@ def _one_fold(
         # Building the encoder before the head keeps the initialisation draws in
         # the order the published runs used; do not reorder these two blocks.
         encoder, _ = load_encoder(
-            cfg["pretrained_checkpoint"], dataset.num_nodes, dataset.num_relations, device
+            cfg["pretrained_checkpoint"],
+            dataset.num_nodes,
+            dataset.num_relations,
+            device,
+            node_names=dataset.node_names(),
+            node_embeddings=model_cfg.get("node_embeddings"),
         )
         edge_index, edge_type = dataset.graph()
         graph = (edge_index.to(device), edge_type.to(device))

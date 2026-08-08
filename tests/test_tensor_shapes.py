@@ -89,6 +89,31 @@ def test_encoder_shapes(dataset: GraphDataset) -> None:
     local = torch.searchsorted(nodes, edge_index[:, keep])
     out = encoder.forward_from_embedding(encoder.embedding(nodes), local, edge_type[keep])
     assert out.shape == (nodes.numel(), H)                                  # [n,H]
+    # No external table: the input matrix is the embedding table itself.
+    assert encoder.node_embedding_matrix() is encoder.embedding.weight
+    assert torch.equal(encoder.embed_nodes(nodes), encoder.embedding(nodes))
+
+
+def test_external_node_embedding_shapes(tmp_path, dataset: GraphDataset) -> None:
+    """One adapter per group: [m,D] -> [m,H], folded into the [N,H] input matrix."""
+    from pathwaygnn.data.node_embeddings import load_node_embeddings
+
+    D, m = 7, 4
+    names = dataset.node_names()
+    np.savez(
+        tmp_path / "t.npz",
+        names=np.array(names[:m], dtype=object),
+        embeddings=np.random.default_rng(0).normal(size=(m, D)).astype(np.float32),
+    )
+    table = load_node_embeddings(str(tmp_path / "t.npz"), names)
+    encoder = RelationalGIN(NUM_NODES, NUM_RELATIONS, hidden_dim=H, external=table)
+    external = encoder.external
+    assert external.get_buffer("vectors_default").shape == (m, D)           # [m,D]
+    assert external.get_buffer("nodes_default").shape == (m,)               # [m]
+    assert external.adapters["default"].weight.shape == (H, D)              # [H,D]
+    assert external(encoder.embedding.weight).shape == (NUM_NODES, H)       # [N,H]
+    assert encoder.node_embedding_matrix().shape == (NUM_NODES, H)          # [N,H]
+    assert encoder.embed_nodes(torch.arange(5)).shape == (5, H)             # [n,H]
 
 
 def test_pretrainer_scores_one_value_per_edge(dataset: GraphDataset) -> None:
